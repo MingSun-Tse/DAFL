@@ -25,11 +25,12 @@ from lenet import LeNet5Half
 from torchvision.datasets import CIFAR10
 from torchvision.datasets import CIFAR100
 import resnet
+from my_utils import LogPrint, set_up_dir
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
-parser.add_argument('--data', type=str, default='/cache/data/')
-parser.add_argument('--teacher_dir', type=str, default='/cache/models/')
+parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
+parser.add_argument('--teacher_dir', type=str, default='MNIST_teacher_model/')
 parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
 parser.add_argument('--batch_size', type=int, default=512, help='size of the batches')
 parser.add_argument('--lr_G', type=float, default=0.2, help='learning rate')
@@ -40,9 +41,17 @@ parser.add_argument('--channels', type=int, default=1, help='number of image cha
 parser.add_argument('--oh', type=float, default=1, help='one hot loss')
 parser.add_argument('--ie', type=float, default=5, help='information entropy loss')
 parser.add_argument('--a', type=float, default=0.1, help='activation loss')
-parser.add_argument('--output_dir', type=str, default='/cache/models/')
-
+parser.add_argument('--output_dir', type=str, default='MNIST_student_model/')
+parser.add_argument('--project_name', type=str, default="")
+parser.add_argument('--resume', type=str, default="")
+parser.add_argument('--CodeID', type=str, default="")
 opt = parser.parse_args()
+
+# set up log dirs
+TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.CodeID)
+logprint = LogPrint(log)
+logprint(opt.__dict__)
+
 
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 
@@ -86,7 +95,7 @@ class Generator(nn.Module):
         return img
         
 generator = Generator().cuda()
-    
+
 teacher = torch.load(opt.teacher_dir + 'teacher').cuda()
 teacher.eval()
 criterion = torch.nn.CrossEntropyLoss().cuda()
@@ -184,7 +193,7 @@ for epoch in range(opt.n_epochs):
         optimizer_G.step()
         optimizer_S.step() 
         if i == 1:
-            print ("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs,loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
+            logprint("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs,loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
             
     with torch.no_grad():
         for i, (images, labels) in enumerate(data_test_loader):
@@ -197,7 +206,7 @@ for epoch in range(opt.n_epochs):
             total_correct += pred.eq(labels.data.view_as(pred)).sum()
 
     avg_loss /= len(data_test)
-    print('Test Avg. Loss: %f, Accuracy: %f' % (avg_loss.data.item(), float(total_correct) / len(data_test)))
+    logprint('Test Avg. Loss: %f, Accuracy: %f' % (avg_loss.data.item(), float(total_correct) / len(data_test)))
     accr = round(float(total_correct) / len(data_test), 4)
     if accr > accr_best:
         torch.save(net,opt.output_dir + 'student')

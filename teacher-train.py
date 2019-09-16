@@ -20,8 +20,8 @@ parser = argparse.ArgumentParser(description='train-teacher-network')
 
 # Basic model parameters.
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
-parser.add_argument('--data', type=str, default='/cache/data/')
-parser.add_argument('--output_dir', type=str, default='/cache/models/')
+parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
+parser.add_argument('--output_dir', type=str, default='/home4/wanghuan/Projects/DAFL/MNIST_teacher_model/')
 args = parser.parse_args()
 
 os.makedirs(args.output_dir, exist_ok=True)  
