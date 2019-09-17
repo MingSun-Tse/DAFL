@@ -15,6 +15,7 @@ from torchvision.datasets import CIFAR100
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader 
 import argparse
+from my_utils import LogPrint, set_up_dir
 
 parser = argparse.ArgumentParser(description='train-teacher-network')
 
@@ -22,7 +23,16 @@ parser = argparse.ArgumentParser(description='train-teacher-network')
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
 parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
 parser.add_argument('--output_dir', type=str, default='/home4/wanghuan/Projects/DAFL/MNIST_teacher_model/')
+parser.add_argument('--project_name', type=str, default='')
+parser.add_argument('--resume', type=str, default='')
+parser.add_argument('--CodeID', type=str, default='')
 args = parser.parse_args()
+
+# set up log dirs
+TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(args.project_name, args.resume, args.CodeID)
+logprint = LogPrint(log)
+logprint(args.__dict__)
+
 
 os.makedirs(args.output_dir, exist_ok=True)  
 
@@ -99,8 +109,8 @@ if args.dataset == 'cifar100':
                       train=False,
                       transform=transform_test)
                       
-    data_train_loader = DataLoader(data_train, batch_size=opt.batchsize, shuffle=True, num_workers=0)
-    data_test_loader = DataLoader(data_test, batch_size=opt.batchsize, num_workers=0)
+    data_train_loader = DataLoader(data_train, batch_size=args.batchsize, shuffle=True, num_workers=0)
+    data_test_loader = DataLoader(data_test, batch_size=args.batchsize, num_workers=0)
     net = resnet.ResNet34(num_classes=100).cuda()
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
@@ -136,7 +146,7 @@ def train(epoch):
         batch_list.append(i+1)
  
         if i == 1:
-            print('Train - Epoch %d, Batch: %d, Loss: %f' % (epoch, i, loss.data.item()))
+            logprint('Train - Epoch %d, Batch: %d, Loss: %f' % (epoch, i, loss.data.item()))
  
         loss.backward()
         optimizer.step()
@@ -159,7 +169,7 @@ def test():
     acc = float(total_correct) / len(data_test)
     if acc_best < acc:
         acc_best = acc
-    print('Test Avg. Loss: %f, Accuracy: %f' % (avg_loss.data.item(), acc))
+    logprint('Test Avg. Loss: %f, Accuracy: %f' % (avg_loss.data.item(), acc))
  
  
 def train_and_test(epoch):
