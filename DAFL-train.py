@@ -16,6 +16,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from torch.autograd import Variable
+from torch.distributions.one_hot_categorical import OneHotCategorical
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -25,7 +26,7 @@ from lenet import LeNet5Half
 from torchvision.datasets import CIFAR10
 from torchvision.datasets import CIFAR100
 import resnet
-from my_utils import LogPrint, set_up_dir
+from my_utils import LogPrint, set_up_dir, get_CodeID
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
@@ -45,13 +46,15 @@ parser.add_argument('--output_dir', type=str, default='MNIST_model/')
 parser.add_argument('--project_name', type=str, default="")
 parser.add_argument('--resume', type=str, default="")
 parser.add_argument('--CodeID', type=str, default="")
+parser.add_argument('--debug', action="store_true")
 opt = parser.parse_args()
 
 # set up log dirs
-TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.CodeID)
-logprint = LogPrint(log)
+TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.debug)
+logprint = LogPrint(log, ExpID)
+opt.ExpID = ExpID
+opt.CodeID = get_CodeID()
 logprint(opt.__dict__)
-
 
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 
@@ -65,7 +68,8 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
 
         self.init_size = opt.img_size // 4
-        self.l1 = nn.Sequential(nn.Linear(opt.latent_dim, 128*self.init_size**2))
+        # self.l1 = nn.Sequential(nn.Linear(opt.latent_dim, 128*self.init_size**2))
+        self.l1 = nn.Sequential(nn.Linear(opt.latent_dim+10, 128*self.init_size**2)) # 2019/10/08, test my losses
 
         self.conv_blocks0 = nn.Sequential(
             nn.BatchNorm2d(128),
@@ -147,8 +151,7 @@ if opt.dataset != 'MNIST':
 
     # Optimizers
     optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
-
-    optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4)
+    optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
 
 
 def adjust_learning_rate(optimizer, epoch, learing_rate):
@@ -166,6 +169,7 @@ def adjust_learning_rate(optimizer, epoch, learing_rate):
 #  Training
 # ----------
 
+one_hot = OneHotCategorical(torch.Tensor([0.1] * 10))
 batches_done = 0
 for epoch in range(opt.n_epochs):
 
@@ -176,22 +180,41 @@ for epoch in range(opt.n_epochs):
 
     for i in range(120):
         net.train()
-        z = Variable(torch.randn(opt.batch_size, opt.latent_dim)).cuda()
+        # z = Variable(torch.randn(opt.batch_size, opt.latent_dim)).cuda()
+        # optimizer_G.zero_grad()
+        # optimizer_S.zero_grad()
+        # gen_imgs = generator(z)
+        # outputs_T, features_T = teacher(gen_imgs, out_feature=True)
+        # pred = outputs_T.data.max(1)[1]
+        # loss_activation = -features_T.abs().mean()
+        # loss_one_hot = criterion(outputs_T,pred)
+        # softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
+        # loss_information_entropy = (softmax_o_T * torch.log10(softmax_o_T)).sum()
+        # loss = loss_one_hot * opt.oh + loss_information_entropy * opt.ie + loss_activation * opt.a
+        # loss_kd = kdloss(net(gen_imgs.detach()), outputs_T.detach()) 
+        # loss += loss_kd
+        # loss.backward()
+        # optimizer_G.step()
+        # optimizer_S.step()
+        
+        # --- 2019/10/08: test my losses
+        noise = torch.randn(opt.batch_size, opt.latent_dim).cuda()
+        onehot_label = one_hot.sample_n(opt.batch_size).view([opt.batch_size, 10]).cuda()
+        label = onehot_label.argmax(dim=1)
+        x = torch.cat([noise, onehot_label], dim=1)
+        
+        gen_imgs = generator(x)
+        outputs_T, features_T = teacher(gen_imgs, out_feature=1)
+        lossG = criterion(outputs_T, label)
+        loss_kd = kdloss(net(gen_imgs.detach()), outputs_T.detach())
+        loss = lossG + loss_kd
         optimizer_G.zero_grad()
-        optimizer_S.zero_grad()        
-        gen_imgs = generator(z)
-        outputs_T, features_T = teacher(gen_imgs, out_feature=True)   
-        pred = outputs_T.data.max(1)[1]
-        loss_activation = -features_T.abs().mean()
-        loss_one_hot = criterion(outputs_T,pred)
-        softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
-        loss_information_entropy = (softmax_o_T * torch.log10(softmax_o_T)).sum()
-        loss = loss_one_hot * opt.oh + loss_information_entropy * opt.ie + loss_activation * opt.a
-        loss_kd = kdloss(net(gen_imgs.detach()), outputs_T.detach()) 
-        loss += loss_kd       
+        optimizer_S.zero_grad()
         loss.backward()
         optimizer_G.step()
-        optimizer_S.step() 
+        optimizer_S.step()
+        # ---
+        
         if i == 1:
             logprint("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs,loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
             
@@ -209,5 +232,5 @@ for epoch in range(opt.n_epochs):
     logprint('Test Avg. Loss: %f, Accuracy: %f' % (avg_loss.data.item(), float(total_correct) / len(data_test)))
     accr = round(float(total_correct) / len(data_test), 4)
     if accr > accr_best:
-        torch.save(net,opt.output_dir + 'student')
+        torch.save(net, opt.output_dir + 'student')
         accr_best = accr
