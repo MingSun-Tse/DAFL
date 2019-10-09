@@ -43,7 +43,7 @@ parser.add_argument('--oh', type=float, default=1, help='one hot loss')
 parser.add_argument('--ie', type=float, default=5, help='information entropy loss')
 parser.add_argument('--a', type=float, default=0.1, help='activation loss')
 parser.add_argument('--output_dir', type=str, default='MNIST_model/')
-parser.add_argument('--project_name', type=str, default="")
+parser.add_argument('-p', '--project_name', type=str, default="")
 parser.add_argument('--resume', type=str, default="")
 parser.add_argument('--CodeID', type=str, default="")
 parser.add_argument('--debug', action="store_true")
@@ -51,6 +51,7 @@ opt = parser.parse_args()
 
 # set up log dirs
 TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.debug)
+opt.output_dir = weights_path
 logprint = LogPrint(log, ExpID)
 opt.ExpID = ExpID
 opt.CodeID = get_CodeID()
@@ -155,9 +156,9 @@ if opt.dataset != 'MNIST':
 
 
 def adjust_learning_rate(optimizer, epoch, learing_rate):
-    if epoch < 800:
+    if epoch < 0.4 * opt.n_epochs: # 800:
         lr = learing_rate
-    elif epoch < 1600:
+    elif epoch < 0.8 * opt.n_epochs: # 1600:
         lr = 0.1*learing_rate
     else:
         lr = 0.01*learing_rate
@@ -198,21 +199,30 @@ for epoch in range(opt.n_epochs):
         # optimizer_S.step()
         
         # --- 2019/10/08: test my losses
-        noise = torch.randn(opt.batch_size, opt.latent_dim).cuda()
-        onehot_label = one_hot.sample_n(opt.batch_size).view([opt.batch_size, 10]).cuda()
-        label = onehot_label.argmax(dim=1)
-        x = torch.cat([noise, onehot_label], dim=1)
+        half_bs = int(opt.batch_size / 2)
+        noise1 = torch.randn(half_bs, opt.latent_dim).cuda()
+        noise2 = torch.randn(half_bs, opt.latent_dim).cuda()
+        noise_concat = torch.cat([noise1, noise2], dim=0)
+        onehot_label = one_hot.sample_n(half_bs).view([half_bs, 10]).cuda()
+        pseudo_label_concat = torch.cat([onehot_label, onehot_label], dim=0)
+        label = pseudo_label_concat.argmax(dim=1)
+        x = torch.cat([noise_concat, pseudo_label_concat], dim=1)
         
         gen_imgs = generator(x)
         outputs_T, features_T = teacher(gen_imgs, out_feature=1)
-        lossG = criterion(outputs_T, label)
-        loss_kd = kdloss(net(gen_imgs.detach()), outputs_T.detach())
-        loss = lossG + loss_kd
+        embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
+        loss_one_hot = criterion(outputs_T, label) ## loss 1
+        x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
+        y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
+        loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() ## loss 2
+        loss_kd = kdloss(net(gen_imgs.detach()), outputs_T.detach()) ## loss 3
+        loss = loss_one_hot * opt.oh + loss_activation * opt.a + loss_kd
         optimizer_G.zero_grad()
         optimizer_S.zero_grad()
         loss.backward()
         optimizer_G.step()
         optimizer_S.step()
+        loss_information_entropy = torch.zeros(1)
         # ---
         
         if i == 1:
