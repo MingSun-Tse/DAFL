@@ -159,9 +159,9 @@ def adjust_learning_rate(optimizer, epoch, learing_rate):
     if epoch < 0.4 * opt.n_epochs: # 800:
         lr = learing_rate
     elif epoch < 0.8 * opt.n_epochs: # 1600:
-        lr = 0.1*learing_rate
+        lr = 0.1 * learing_rate
     else:
-        lr = 0.01*learing_rate
+        lr = 0.01 * learing_rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
         

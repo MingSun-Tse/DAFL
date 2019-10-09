@@ -23,16 +23,20 @@ parser = argparse.ArgumentParser(description='train-teacher-network')
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
 parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
 parser.add_argument('--output_dir', type=str, default='/home4/wanghuan/Projects/DAFL/MNIST_teacher_model/')
-parser.add_argument('--project_name', type=str, default='')
+parser.add_argument('-p', --project_name', type=str, default='')
 parser.add_argument('--resume', type=str, default='')
 parser.add_argument('--CodeID', type=str, default='')
+parser.add_argument('--debug', action="store_true")
+parser.add_argument('--which_net', type=str, default="")
 args = parser.parse_args()
 
 # set up log dirs
-TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(args.project_name, args.resume, args.CodeID)
-logprint = LogPrint(log)
-logprint(args.__dict__)
-
+TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.debug)
+opt.output_dir = weights_path
+logprint = LogPrint(log, ExpID)
+opt.ExpID = ExpID
+opt.CodeID = get_CodeID()
+logprint(opt.__dict__)
 
 os.makedirs(args.output_dir, exist_ok=True)  
 
@@ -85,7 +89,10 @@ if args.dataset == 'cifar10':
     data_train_loader = DataLoader(data_train, batch_size=128, shuffle=True, num_workers=8)
     data_test_loader = DataLoader(data_test, batch_size=100, num_workers=0)
 
-    net = resnet.ResNet34().cuda()
+    if args.which_net == "embed":
+      net = resnet.ResNet34_2neurons().cuda()
+    else:
+      net = resnet.ResNet34().cuda()
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
 
