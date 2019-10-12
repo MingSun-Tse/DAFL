@@ -215,7 +215,7 @@ for epoch in range(opt.n_epochs):
         loss_one_hot = criterion(outputs_T, label) ## loss 1
         x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
         y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
-        if args.use_sign:
+        if opt.use_sign:
           loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() ## loss 2
         else:
           loss_activation = y_cos / x_cos
