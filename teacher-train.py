@@ -15,7 +15,7 @@ from torchvision.datasets import CIFAR100
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader 
 import argparse
-from my_utils import LogPrint, set_up_dir
+from my_utils import LogPrint, set_up_dir, get_CodeID
 
 parser = argparse.ArgumentParser(description='train-teacher-network')
 
@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser(description='train-teacher-network')
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
 parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
 parser.add_argument('--output_dir', type=str, default='/home4/wanghuan/Projects/DAFL/MNIST_teacher_model/')
-parser.add_argument('-p', --project_name', type=str, default='')
+parser.add_argument('-p', '--project_name', type=str, default='')
 parser.add_argument('--resume', type=str, default='')
 parser.add_argument('--CodeID', type=str, default='')
 parser.add_argument('--debug', action="store_true")
@@ -31,12 +31,12 @@ parser.add_argument('--which_net', type=str, default="")
 args = parser.parse_args()
 
 # set up log dirs
-TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.debug)
-opt.output_dir = weights_path
+TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(args.project_name, args.resume, args.debug)
+args.output_dir = weights_path
 logprint = LogPrint(log, ExpID)
-opt.ExpID = ExpID
-opt.CodeID = get_CodeID()
-logprint(opt.__dict__)
+args.ExpID = ExpID
+args.CodeID = get_CodeID()
+logprint(args.__dict__)
 
 os.makedirs(args.output_dir, exist_ok=True)  
 

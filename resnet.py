@@ -71,12 +71,11 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         if embed: # 2019/10/09: for embedding
-          self.linear = nn.Sequential(nn.Linear(512*block.expansion, 2),
+          self.linear = nn.Sequential(nn.Linear(512*block.expansion, 3),
                                       nn.ReLU(),
-                                      nn.Linear(2, num_classes))
+                                      nn.Linear(3, num_classes))
         else:
           self.linear = nn.Linear(512*block.expansion, num_classes)
-
  
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)

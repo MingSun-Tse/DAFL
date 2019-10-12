@@ -47,6 +47,7 @@ parser.add_argument('-p', '--project_name', type=str, default="")
 parser.add_argument('--resume', type=str, default="")
 parser.add_argument('--CodeID', type=str, default="")
 parser.add_argument('--debug', action="store_true")
+parser.add_argument('--use_sign', action="store_true")
 opt = parser.parse_args()
 
 # set up log dirs
@@ -214,8 +215,12 @@ for epoch in range(opt.n_epochs):
         loss_one_hot = criterion(outputs_T, label) ## loss 1
         x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
         y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
-        loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() ## loss 2
-        loss_kd = kdloss(net(gen_imgs.detach()), outputs_T.detach()) ## loss 3
+        if args.use_sign:
+          loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() ## loss 2
+        else:
+          loss_activation = y_cos / x_cos
+        outputs_S = net(gen_imgs.detach())
+        loss_kd = kdloss(outputs_S, outputs_T.detach()) ## loss 3
         loss = loss_one_hot * opt.oh + loss_activation * opt.a + loss_kd
         optimizer_G.zero_grad()
         optimizer_S.zero_grad()
