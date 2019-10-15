@@ -192,9 +192,9 @@ if opt.dataset != 'MNIST':
     optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
 
 def adjust_learning_rate(optimizer, epoch, learing_rate):
-    if epoch < 0.4 * opt.n_epochs: # 800:
+    if epoch < 160: # 0.4 * opt.n_epochs: # 800:
         lr = learing_rate
-    elif epoch < 0.8 * opt.n_epochs: # 1600:
+    elif epoch < 320: #0.8 * opt.n_epochs: # 1600:
         lr = 0.1 * learing_rate
     else:
         lr = 0.01 * learing_rate
