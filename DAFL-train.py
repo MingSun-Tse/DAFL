@@ -51,6 +51,7 @@ parser.add_argument('--debug', action="store_true")
 parser.add_argument('--use_sign', action="store_true")
 parser.add_argument('--mode', type=str, required=True)
 parser.add_argument('--plot_train_feat', action="store_true")
+parser.add_argument('--which_lenet', type=str)
 opt = parser.parse_args()
 
 # set up log dirs
@@ -97,6 +98,21 @@ class LeNet5_2neurons(nn.Module):
     y = self.relu(self.fc4(y))
     y = self.fc5(y)
     return y
+  
+  def forward(self, y, out_feature=False):
+    y = self.relu(self.conv1(y))
+    y = self.pool1(y)
+    y = self.relu(self.conv2(y))
+    y = self.pool2(y)
+    feat = y.view(y.size(0), -1)
+    y = self.relu(self.fc3(feat))
+    y = self.relu(self.fc4(y))
+    y = self.relu(self.fc5(y))
+    y = self.fc6(y)
+    if out_feature:
+      return y, feat
+    else:
+      return y
 
 class Generator(nn.Module):
     def __init__(self):
@@ -141,6 +157,10 @@ generator = Generator().cuda()
 teacher = torch.load(opt.teacher_dir + 'teacher').cuda()
 teacher.eval()
 criterion = torch.nn.CrossEntropyLoss().cuda()
+if opt.dataset == "MNIST" and opt.which_lenet == "_2neurons":
+  pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
+  pretrained = check_path(pretrained)
+  teacher = LeNet5_2neurons(pretrained).eval().cuda()
 
 teacher = nn.DataParallel(teacher)
 generator = nn.DataParallel(generator)
