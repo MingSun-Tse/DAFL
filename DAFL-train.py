@@ -43,6 +43,7 @@ parser.add_argument('--channels', type=int, default=1, help='number of image cha
 parser.add_argument('--oh', type=float, default=1, help='one hot loss')
 parser.add_argument('--ie', type=float, default=5, help='information entropy loss')
 parser.add_argument('--a', type=float, default=0.1, help='activation loss')
+parser.add_argument('--lw_norm', type=float, default=0)
 parser.add_argument('--output_dir', type=str, default='MNIST_model/')
 parser.add_argument('-p', '--project_name', type=str, default="")
 parser.add_argument('--resume', type=str, default="")
@@ -303,6 +304,8 @@ for epoch in range(opt.n_epochs):
           outputs_S = net(gen_imgs.detach())
           loss_kd = kdloss(outputs_S, outputs_T.detach()) ## loss 3
           loss = loss_one_hot * opt.oh + loss_activation * opt.a + loss_kd
+          if opt.lw_norm:
+            loss += -torch.norm(features_T) * opt.lw_norm
           optimizer_G.zero_grad()
           optimizer_S.zero_grad()
           loss.backward()
