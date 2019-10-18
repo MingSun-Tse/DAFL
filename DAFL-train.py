@@ -52,7 +52,7 @@ parser.add_argument('--use_sign', action="store_true")
 parser.add_argument('--use_condition', action="store_true")
 parser.add_argument('--mode', type=str, required=True)
 parser.add_argument('--plot_train_feat', action="store_true")
-parser.add_argument('--which_lenet', type=str)
+parser.add_argument('--which_lenet', type=str, default="")
 opt = parser.parse_args()
 
 # set up log dirs
