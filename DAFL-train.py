@@ -305,7 +305,7 @@ for epoch in range(opt.n_epochs):
             loss_activation = y_cos / x_cos
           loss_G = loss_activation * opt.a
           if opt.lw_norm:
-            loss_G += -torch.norm(features_T) * opt.lw_norm
+            loss_G += -features_T.abs().mean() * opt.lw_norm
           if opt.lw_adv:
             outputs_S = net(gen_imgs)
             loss_G += -criterion(outputs_S, label.detach()) * opt.lw_adv
