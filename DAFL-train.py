@@ -157,8 +157,11 @@ generator = Generator().cuda()
 teacher = torch.load(opt.teacher_dir + 'teacher').cuda()
 teacher.eval()
 criterion = torch.nn.CrossEntropyLoss().cuda()
-if opt.dataset == "MNIST" and opt.which_lenet == "_2neurons":
-  pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons_2/w*/*E23S0*.pth"
+if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
+  if opt.which_lenet == "_2neurons1":
+    pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
+  elif opt.which_lenet == "_2neurons2"::
+    pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons_2/w*/*E23S0*.pth"
   pretrained = check_path(pretrained)
   teacher = LeNet5_2neurons(pretrained).eval().cuda()
 
