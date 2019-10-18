@@ -44,6 +44,7 @@ parser.add_argument('--oh', type=float, default=1, help='one hot loss')
 parser.add_argument('--ie', type=float, default=5, help='information entropy loss')
 parser.add_argument('--a', type=float, default=0.1, help='activation loss')
 parser.add_argument('--lw_norm', type=float, default=0)
+parser.add_argument('--lw_adv', type=float, default=0)
 parser.add_argument('--output_dir', type=str, default='MNIST_model/')
 parser.add_argument('-p', '--project_name', type=str, default="")
 parser.add_argument('--resume', type=str, default="")
@@ -293,28 +294,33 @@ for epoch in range(opt.n_epochs):
           
           gen_imgs = generator(x)
           outputs_T, features_T = teacher(gen_imgs, out_feature=1)
+          label = outputs_T.argmax(dim=1) # 2019/10/18: for adv loss
           embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
-          loss_one_hot = criterion(outputs_T, label) ## loss 1
+          # loss_one_hot = criterion(outputs_T, label) ## loss 1
           x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
           y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
           if opt.use_sign:
             loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() ## loss 2
           else:
             loss_activation = y_cos / x_cos
-          outputs_S = net(gen_imgs.detach())
-          loss_kd = kdloss(outputs_S, outputs_T.detach()) ## loss 3
-          loss = loss_one_hot * opt.oh + loss_activation * opt.a + loss_kd
+          loss_G = loss_activation * opt.a
           if opt.lw_norm:
-            loss += -torch.norm(features_T) * opt.lw_norm
-          optimizer_G.zero_grad()
-          optimizer_S.zero_grad()
-          loss.backward()
-          optimizer_G.step()
-          optimizer_S.step()
+            loss_G += -torch.norm(features_T) * opt.lw_norm
+          if opt.lw_adv:
+            outputs_S = net(gen_imgs)
+            loss_G += -criterion(outputs_S, label.detach()) * opt.lw_adv
+          optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
+          
+          # update S
+          outputs_S = net(gen_imgs.detach())
+          loss_kd = kdloss(outputs_S, outputs_T.detach())
+          optimizer_S.zero_grad(); optimizer_S.step()
+          
           loss_information_entropy = torch.zeros(1)
+          loss_one_hot = torch.zeros(1) # for print
           
           # visualize
-          label = outputs_T.argmax(dim=1); if_right = torch.ones_like(label)
+          if_right = torch.ones_like(label)
           if opt.plot_train_feat and i % 10 == 0:
             feat = embed_net.forward_2neurons(gen_imgs)
             ax_train = feat_visualize(ax_train, feat.data.cpu().numpy(), label.data.cpu().numpy(), if_right.data.cpu().numpy())
