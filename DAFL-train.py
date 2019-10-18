@@ -314,7 +314,7 @@ for epoch in range(opt.n_epochs):
           # update S
           outputs_S = net(gen_imgs.detach())
           loss_kd = kdloss(outputs_S, outputs_T.detach())
-          optimizer_S.zero_grad(); optimizer_S.step()
+          optimizer_S.zero_grad(); loss_kd.backward(); optimizer_S.step()
           
           loss_information_entropy = torch.zeros(1)
           loss_one_hot = torch.zeros(1) # for print
