@@ -49,6 +49,7 @@ parser.add_argument('--resume', type=str, default="")
 parser.add_argument('--CodeID', type=str, default="")
 parser.add_argument('--debug', action="store_true")
 parser.add_argument('--use_sign', action="store_true")
+parser.add_argument('--use_condition', action="store_true")
 parser.add_argument('--mode', type=str, required=True)
 parser.add_argument('--plot_train_feat', action="store_true")
 parser.add_argument('--which_lenet', type=str)
@@ -308,10 +309,22 @@ for epoch in range(opt.n_epochs):
           optimizer_G.step()
           optimizer_S.step()
           loss_information_entropy = torch.zeros(1)
+          
+          # visualize
+          label = outputs_T.argmax(dim=1); if_right = torch.ones_like(label)
+          if opt.plot_train_feat and i % 10 == 0:
+            feat = embed_net.forward_2neurons(gen_imgs)
+            ax_train = feat_visualize(ax_train, feat.data.cpu().numpy(), label.data.cpu().numpy(), if_right.data.cpu().numpy())
+            if i % 100 == 0:
+              save_train_feat_path = pjoin(rec_img_path, "%s_E%sS%s_feat-visualization-train.jpg" % (ExpID, epoch, i))
+              ax_train.set_xlim([-20, 200])
+              ax_train.set_ylim([-20, 200])
+              fig_train.savefig(save_train_feat_path, dpi=400)
+              fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
           # ---
         
         if i == 1:
-            logprint("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs,loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
+            logprint("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs, loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
             
     with torch.no_grad():
         for i, (images, labels) in enumerate(data_test_loader):
