@@ -58,14 +58,6 @@ parser.add_argument('--which_lenet', type=str, default="")
 parser.add_argument('--adjust_sampler', action="store_true")
 opt = parser.parse_args()
 
-# set up log dirs
-TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.debug)
-opt.output_dir = weights_path
-logprint = LogPrint(log, ExpID)
-opt.ExpID = ExpID
-opt.CodeID = get_CodeID()
-logprint(opt.__dict__)
-
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 
 cuda = True 
@@ -158,7 +150,11 @@ class Generator(nn.Module):
         
 generator = Generator().cuda()
 
-teacher = torch.load(opt.teacher_dir + 'teacher').cuda()
+if opt.dataset == "cifar10":
+  opt.data= "/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_CIFAR10"
+  opt.teacher_dir = "CIFAR10_model/"
+  
+teacher = torch.load(opt.teacher_dir + '/teacher').cuda()
 teacher.eval()
 criterion = torch.nn.CrossEntropyLoss().cuda()
 if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
@@ -230,7 +226,14 @@ def adjust_learning_rate(optimizer, epoch, learing_rate):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
         
-        
+# set up log dirs
+TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.debug)
+opt.output_dir = weights_path
+logprint = LogPrint(log, ExpID)
+opt.ExpID = ExpID
+opt.CodeID = get_CodeID()
+logprint(opt.__dict__)
+
 # ----------
 #  Training
 # ----------
