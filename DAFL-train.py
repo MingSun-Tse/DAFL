@@ -322,8 +322,8 @@ for epoch in range(opt.n_epochs):
           if i % 10 == 0:
             logprint(logtmp)
           
-          embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
           loss_one_hot = criterion(outputs_T, label) ## loss 1
+          embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
           x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
           y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
           if opt.use_sign:
@@ -335,6 +335,8 @@ for epoch in range(opt.n_epochs):
             softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
             loss_information_entropy = (softmax_o_T * torch.log10(softmax_o_T)).sum()
             loss_G += loss_information_entropy * opt.ie
+          else:
+            loss_information_entropy = torch.zeros(1)
           if opt.lw_norm:
             loss_G += -features_T.abs().mean() * opt.lw_norm
           if opt.lw_adv:
@@ -346,8 +348,6 @@ for epoch in range(opt.n_epochs):
           outputs_S = net(gen_imgs.detach())
           loss_kd = kdloss(outputs_S, outputs_T.detach())
           optimizer_S.zero_grad(); loss_kd.backward(); optimizer_S.step()
-          
-          loss_information_entropy = torch.zeros(1)
           
           # visualize
           if_right = torch.ones_like(label_T)
