@@ -323,12 +323,16 @@ for epoch in range(opt.n_epochs):
             cnt = num_sample_per_class[ii]
             logtmp += "%d " % int(cnt)
             if opt.adjust_sampler:
-              sample_prob[ii] = 1./5 if cnt == 0 else 1./cnt
+              sample_prob[ii] = 1./1 if cnt == 0 else 1./cnt
           if opt.adjust_sampler:
             sample_prob = sample_prob / sample_prob.sum()
+          stddev = np.std(num_sample_per_class)
+          opt.oh = stddev / 4
           if i % 10 == 0:
             logprint(logtmp)
-          
+            logprint(sample_prob)
+            logprint("%.1f  %.1f" % (stddev, opt.oh))
+
           loss_one_hot = criterion(outputs_T, label) ## loss 1
           embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
           x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
@@ -336,7 +340,9 @@ for epoch in range(opt.n_epochs):
           if opt.use_sign:
             loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() ## loss 2
           else:
-            loss_activation = y_cos / x_cos
+            p = 0.2
+            dynamic_sign = 1 if torch.rand(1).item() > p else -1
+            loss_activation = dynamic_sign * y_cos / x_cos * torch.sign(x_cos).detach()
           loss_G = loss_activation * opt.a + loss_one_hot * opt.oh
           if opt.ie:
             softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
