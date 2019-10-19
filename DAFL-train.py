@@ -55,6 +55,7 @@ parser.add_argument('--use_condition', action="store_true")
 parser.add_argument('--mode', type=str, required=True)
 parser.add_argument('--plot_train_feat', action="store_true")
 parser.add_argument('--which_lenet', type=str, default="")
+parser.add_argument('--adjust_sampler', action="store_true")
 opt = parser.parse_args()
 
 # set up log dirs
@@ -304,6 +305,20 @@ for epoch in range(opt.n_epochs):
           gen_imgs = generator(x)
           outputs_T, features_T = teacher(gen_imgs, out_feature=1)
           label_T = outputs_T.argmax(dim=1) # 2019/10/18: for adv loss
+          
+          # analyze label_T and thus adjust sampler
+          logtmp = ""
+          for i in range(10):
+            num_sample_per_class[i] = num_sample_per_class[i] * 0.9 + sum(label_T.cpu().data.numpy() == i) * 0.1
+            cnt = num_sample_per_class[i]
+            logtmp += "%d " % int(cnt)
+            if opt.adjust_sampler:
+              sample_prob[i] = 1./5 if cnt == 0 else 1./cnt
+          if opt.adjust_sampler:
+            sample_prob = sample_prob / sample_prob.sum()
+          if i % 10 == 0:
+            logprint(logtmp)
+          
           embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
           loss_one_hot = criterion(outputs_T, label) ## loss 1
           x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
@@ -319,16 +334,6 @@ for epoch in range(opt.n_epochs):
             outputs_S = net(gen_imgs)
             loss_G += -criterion(outputs_S, label_T.detach()) * opt.lw_adv
           optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
-          
-          # analyze label_T and thus adjust sampler
-          logtmp = ""
-          for i in range(10):
-            num_sample_per_class[i] = num_sample_per_class[i] * 0.9 + sum(label_T.cpu().data.numpy() == i) * 0.1
-            cnt = num_sample_per_class[i]
-            logtmp += "%d " % int(cnt)
-            sample_prob[i] = 1./5 if cnt == 0 else 1./cnt
-          sample_prob = sample_prob / sample_prob.sum()
-          logprint(logtmp)
           
           # update S
           outputs_S = net(gen_imgs.detach())
