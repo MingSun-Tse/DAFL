@@ -317,7 +317,6 @@ for epoch in range(opt.n_epochs):
           optimizer_S.zero_grad(); loss_kd.backward(); optimizer_S.step()
           
           loss_information_entropy = torch.zeros(1)
-          loss_one_hot = torch.zeros(1) # for print
           
           # visualize
           if_right = torch.ones_like(label_T)
