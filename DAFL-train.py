@@ -284,11 +284,14 @@ for epoch in range(opt.n_epochs):
           optimizer_G.step()
           optimizer_S.step()
           
-          # check class balance
-          # for i in range(10):
-            # cnt = sum(label.cpu().data.numpy() == i)
-            # print(cnt, end=" ")
-          # print("")
+          # analyze label_T and thus adjust sampler
+          logtmp = ""
+          for ii in range(10):
+            num_sample_per_class[ii] = num_sample_per_class[ii] * 0.9 + sum(label_T.cpu().data.numpy() == ii) * 0.1
+            cnt = num_sample_per_class[ii]
+            logtmp += "%d " % int(cnt)
+          if i % 10 == 0:
+            logprint(logtmp)
           
         elif opt.mode == "ours":
           # --- 2019/10/08: test my losses
