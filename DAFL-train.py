@@ -34,7 +34,7 @@ parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','ci
 parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
 parser.add_argument('--teacher_dir', type=str, default='MNIST_model/')
 parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
-parser.add_argument('--batch_size', type=int, default=512, help='size of the batches')
+parser.add_argument('-b', '--batch_size', type=int, default=512, help='size of the batches')
 parser.add_argument('--lr_G', type=float, default=0.2, help='learning rate')
 parser.add_argument('--lr_S', type=float, default=2e-3, help='learning rate')
 parser.add_argument('--latent_dim', type=int, default=100, help='dimensionality of the latent space')
@@ -61,7 +61,7 @@ if opt.dataset == "cifar10":
   opt.channels = 3
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 
-cuda = True 
+cuda = True
 accr = 0
 accr_best = 0
 
