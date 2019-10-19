@@ -315,11 +315,11 @@ for epoch in range(opt.n_epochs):
           # analyze label_T and thus adjust sampler
           logtmp = ""
           for ii in range(10):
-            num_sample_per_class[ii] = num_sample_per_class[ii] * 0.9 + sum(label_T.cpu().data.numpy() == ii) * 0.1
+            num_sample_per_class[ii] = num_sample_per_class[ii] * 0.95 + sum(label_T.cpu().data.numpy() == ii) * 0.05
             cnt = num_sample_per_class[ii]
             logtmp += "%d " % int(cnt)
             if opt.adjust_sampler:
-              sample_prob[i] = 1./5 if cnt == 0 else 1./cnt
+              sample_prob[ii] = 1./5 if cnt == 0 else 1./cnt
           if opt.adjust_sampler:
             sample_prob = sample_prob / sample_prob.sum()
           if i % 10 == 0:
