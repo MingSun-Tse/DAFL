@@ -239,8 +239,9 @@ if opt.dataset == "MNIST":
   embed_net = LeNet5_2neurons(pretrained).eval().cuda()
   fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
 
-one_hot = OneHotCategorical(torch.Tensor([0.1] * 10))
 batches_done = 0
+sample_prob = torch.ones(10) / 10
+num_sample_per_class = [0] * 10
 for epoch in range(opt.n_epochs):
 
     total_correct = 0
@@ -281,12 +282,20 @@ for epoch in range(opt.n_epochs):
           loss.backward()
           optimizer_G.step()
           optimizer_S.step()
+          
+          # check class balance
+          # for i in range(10):
+            # cnt = sum(label.cpu().data.numpy() == i)
+            # print(cnt, end=" ")
+          # print("")
+          
         elif opt.mode == "ours":
           # --- 2019/10/08: test my losses
           half_bs = int(opt.batch_size / 2)
           noise1 = torch.randn(half_bs, opt.latent_dim).cuda()
           noise2 = torch.randn(half_bs, opt.latent_dim).cuda()
           noise_concat = torch.cat([noise1, noise2], dim=0)
+          one_hot = OneHotCategorical(sample_prob)
           onehot_label = one_hot.sample_n(half_bs).view([half_bs, 10]).cuda()
           pseudo_label_concat = torch.cat([onehot_label, onehot_label], dim=0)
           label = pseudo_label_concat.argmax(dim=1)
@@ -310,6 +319,16 @@ for epoch in range(opt.n_epochs):
             outputs_S = net(gen_imgs)
             loss_G += -criterion(outputs_S, label_T.detach()) * opt.lw_adv
           optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
+          
+          # analyze label_T and thus adjust sampler
+          logtmp = ""
+          for i in range(10):
+            num_sample_per_class[i] = num_sample_per_class[i] * 0.9 + sum(label_T.cpu().data.numpy() == i) * 0.1
+            cnt = num_sample_per_class[i]
+            logtmp += "%d " % int(cnt)
+            sample_prob[i] = 1./5 if cnt == 0 else 1./cnt
+          sample_prob = sample_prob / sample_prob.sum()
+          logprint(logtmp)
           
           # update S
           outputs_S = net(gen_imgs.detach())
