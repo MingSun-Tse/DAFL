@@ -287,7 +287,7 @@ for epoch in range(opt.n_epochs):
           # analyze label_T and thus adjust sampler
           logtmp = ""
           for ii in range(10):
-            num_sample_per_class[ii] = num_sample_per_class[ii] * 0.9 + sum(label_T.cpu().data.numpy() == ii) * 0.1
+            num_sample_per_class[ii] = num_sample_per_class[ii] * 0.9 + sum(label.cpu().data.numpy() == ii) * 0.1
             cnt = num_sample_per_class[ii]
             logtmp += "%d " % int(cnt)
           if i % 10 == 0:
