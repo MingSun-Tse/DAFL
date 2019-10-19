@@ -294,21 +294,21 @@ for epoch in range(opt.n_epochs):
           
           gen_imgs = generator(x)
           outputs_T, features_T = teacher(gen_imgs, out_feature=1)
-          label = outputs_T.argmax(dim=1) # 2019/10/18: for adv loss
+          label_T = outputs_T.argmax(dim=1) # 2019/10/18: for adv loss
           embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
-          # loss_one_hot = criterion(outputs_T, label) ## loss 1
+          loss_one_hot = criterion(outputs_T, label) ## loss 1
           x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
           y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
           if opt.use_sign:
             loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() ## loss 2
           else:
             loss_activation = y_cos / x_cos
-          loss_G = loss_activation * opt.a
+          loss_G = loss_activation * opt.a + loss_one_hot * opt.oh
           if opt.lw_norm:
             loss_G += -features_T.abs().mean() * opt.lw_norm
           if opt.lw_adv:
             outputs_S = net(gen_imgs)
-            loss_G += -criterion(outputs_S, label.detach()) * opt.lw_adv
+            loss_G += -criterion(outputs_S, label_T.detach()) * opt.lw_adv
           optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
           
           # update S
@@ -320,10 +320,10 @@ for epoch in range(opt.n_epochs):
           loss_one_hot = torch.zeros(1) # for print
           
           # visualize
-          if_right = torch.ones_like(label)
+          if_right = torch.ones_like(label_T)
           if opt.plot_train_feat and i % 10 == 0:
             feat = embed_net.forward_2neurons(gen_imgs)
-            ax_train = feat_visualize(ax_train, feat.data.cpu().numpy(), label.data.cpu().numpy(), if_right.data.cpu().numpy())
+            ax_train = feat_visualize(ax_train, feat.data.cpu().numpy(), label_T.data.cpu().numpy(), if_right.data.cpu().numpy())
             if i % 100 == 0:
               save_train_feat_path = pjoin(rec_img_path, "%s_E%sS%s_feat-visualization-train.jpg" % (ExpID, epoch, i))
               ax_train.set_xlim([-20, 200])
