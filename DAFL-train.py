@@ -331,6 +331,10 @@ for epoch in range(opt.n_epochs):
           else:
             loss_activation = y_cos / x_cos
           loss_G = loss_activation * opt.a + loss_one_hot * opt.oh
+          if opt.ie:
+            softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
+            loss_information_entropy = (softmax_o_T * torch.log10(softmax_o_T)).sum()
+            loss_G += loss_information_entropy * opt.ie
           if opt.lw_norm:
             loss_G += -features_T.abs().mean() * opt.lw_norm
           if opt.lw_adv:
