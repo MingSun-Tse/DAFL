@@ -57,11 +57,11 @@ parser.add_argument('--plot_train_feat', action="store_true")
 parser.add_argument('--which_lenet', type=str, default="")
 parser.add_argument('--adjust_sampler', action="store_true")
 opt = parser.parse_args()
-
+if opt.dataset == "cifar10":
+  opt.channels = 3
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 
 cuda = True 
-
 accr = 0
 accr_best = 0
 
