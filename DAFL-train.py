@@ -56,6 +56,7 @@ parser.add_argument('--mode', type=str, required=True)
 parser.add_argument('--plot_train_feat', action="store_true")
 parser.add_argument('--which_lenet', type=str, default="")
 parser.add_argument('--adjust_sampler', action="store_true")
+parser.add_argument('--test_interval', type=int, default=120)
 opt = parser.parse_args()
 if opt.dataset == "cifar10":
   opt.channels = 3
@@ -246,10 +247,10 @@ if opt.dataset == "MNIST":
 batches_done = 0
 sample_prob = torch.ones(10) / 10
 num_sample_per_class = [0] * 10
+history_acc = [1] * 10; history_kld = [0] * 10
 for epoch in range(opt.n_epochs):
-
-    total_correct = 0
-    avg_loss = 0.0
+    # total_correct = 0
+    # avg_loss = 0.0
     if opt.dataset != 'MNIST':
         adjust_learning_rate(optimizer_S, epoch, opt.lr_S)
 
@@ -299,11 +300,11 @@ for epoch in range(opt.n_epochs):
         elif opt.mode == "ours":
           # --- 2019/10/08: test my losses
           half_bs = int(opt.batch_size / 2)
-          noise1 = torch.randn(half_bs, opt.latent_dim).cuda()
-          noise2 = torch.randn(half_bs, opt.latent_dim).cuda()
+          noise1 = torch.rand(half_bs, opt.latent_dim).cuda() * 2 - 1
+          noise2 = torch.rand(half_bs, opt.latent_dim).cuda() * 2 - 1
           noise_concat = torch.cat([noise1, noise2], dim=0)
           one_hot = OneHotCategorical(sample_prob)
-          onehot_label = one_hot.sample_n(half_bs).view([half_bs, 10]).cuda()
+          onehot_label = one_hot.sample([half_bs]).view([half_bs, 10]).cuda()
           pseudo_label_concat = torch.cat([onehot_label, onehot_label], dim=0)
           label = pseudo_label_concat.argmax(dim=1)
           x = torch.cat([noise_concat, pseudo_label_concat], dim=1)
@@ -321,17 +322,13 @@ for epoch in range(opt.n_epochs):
             else:
               num_sample_per_class[ii] = tmp
             cnt = num_sample_per_class[ii]
-            logtmp += "%d " % int(cnt)
+            logtmp += "%.2f  " % (cnt / opt.batch_size)
             if opt.adjust_sampler:
               sample_prob[ii] = 1./1 if cnt == 0 else 1./cnt
           if opt.adjust_sampler:
             sample_prob = sample_prob / sample_prob.sum()
-          stddev = np.std(num_sample_per_class)
-          opt.oh = stddev / 4
-          if i % 10 == 0:
-            logprint(logtmp)
-            logprint(sample_prob)
-            logprint("%.1f  %.1f" % (stddev, opt.oh))
+          if i % 11 == 0:
+            logprint(logtmp + "-- real class ratio\n")
 
           loss_one_hot = criterion(outputs_T, label) ## loss 1
           embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
@@ -340,13 +337,38 @@ for epoch in range(opt.n_epochs):
           if opt.use_sign:
             loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() ## loss 2
           else:
-            p = 0.2
-            dynamic_sign = 1 if torch.rand(1).item() > p else -1
-            loss_activation = dynamic_sign * y_cos / x_cos * torch.sign(x_cos).detach()
-          loss_G = loss_activation * opt.a + loss_one_hot * opt.oh
+            # p = 0.2
+            dynamic_sign = 1 # if torch.rand(1).item() > p else -1
+            loss_activation = dynamic_sign * y_cos / x_cos # * torch.sign(x_cos).detach()
+          if 0 in history_acc or np.mean(history_acc) < 0.40:
+            lw_a = 0
+          else:
+            lw_a = opt.a
+          loss_G = loss_activation * lw_a + loss_one_hot * opt.oh
           if opt.ie:
             softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
-            loss_information_entropy = (softmax_o_T * torch.log10(softmax_o_T)).sum()
+
+            tmp1 = ""; tmp2 = ""
+            for c in range(10):
+              tmp1 += "%.2f  " % history_acc[c]
+              tmp2 += "%.2f  " % history_kld[c]
+            if i % 10 == 0:
+              logprint(tmp1 + "-- train history_acc")
+              # logprint(tmp2 + "-- train kld loss")
+            
+            if i % 10 == 0:
+              aa = np.zeros(10)
+              for k in range(10):
+                aa[k] = 0.1 if (0 in history_acc or np.mean(history_acc) < 0.40) else 1.0 / history_acc[k]
+              aa = aa / aa.sum()
+              tmp = ""
+              for k in range(10):
+                tmp += "%.2f  " % aa[k]
+              logprint(tmp + "-- expected class ratio")
+            dist_wanted = torch.from_numpy(np.array(aa)).float().cuda()
+            loss_information_entropy = F.kl_div(softmax_o_T.log(), dist_wanted, reduction="sum")
+            # loss_information_entropy = (softmax_o_T * torch.log10(softmax_o_T)).sum()
+
             loss_G += loss_information_entropy * opt.ie
           else:
             loss_information_entropy = torch.zeros(1)
@@ -359,6 +381,21 @@ for epoch in range(opt.n_epochs):
           
           # update S
           outputs_S = net(gen_imgs.detach())
+          pred = outputs_S.max(1)[1]
+          if_right = pred.eq(label_T.view_as(pred))
+          trainacc = if_right.sum().item() / label_T.size(0)
+          
+          # print per-class info
+          acc = [0] * 10; cnt = [1] * 10; kld = [0] * 10
+          for oS, oT in zip(outputs_S, outputs_T):
+            lT = oT.argmax(); lS = oS.argmax()
+            acc[lT] += int(lT == lS)
+            cnt[lT] += 1
+            kld[lT] += F.kl_div(F.log_softmax(oS, dim=0), F.softmax(oT, dim=0)).item()
+          for k in range(10):
+            history_acc[k] = history_acc[k] * 0 + acc[k] * 1.0 / cnt[k]
+            history_kld[k] = history_kld[k] * 0 + kld[k] * 1.0 / cnt[k]
+          
           loss_kd = kdloss(outputs_S, outputs_T.detach())
           optimizer_S.zero_grad(); loss_kd.backward(); optimizer_S.step()
           
@@ -377,20 +414,36 @@ for epoch in range(opt.n_epochs):
         
         if i == 1:
             logprint("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs, loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
-            
-    with torch.no_grad():
-        for i, (images, labels) in enumerate(data_test_loader):
-            images = images.cuda()
-            labels = labels.cuda()
-            net.eval()
-            output = net(images)
-            avg_loss += criterion(output, labels).sum()
-            pred = output.data.max(1)[1]
-            total_correct += pred.eq(labels.data.view_as(pred)).sum()
-
-    avg_loss /= len(data_test)
-    logprint('Test Avg. Loss: %f, Accuracy: %f' % (avg_loss.data.item(), float(total_correct) / len(data_test)))
-    accr = round(float(total_correct) / len(data_test), 4)
-    if accr > accr_best:
-        torch.save(net, opt.output_dir + 'student')
-        accr_best = accr
+        if i % opt.test_interval == 0:
+          total_correct = 0
+          avg_loss = 0
+          with torch.no_grad():
+              pred_total = []
+              label_total = []
+              for _, (images, labels) in enumerate(data_test_loader):
+                  images = images.cuda()
+                  labels = labels.cuda()
+                  net.eval()
+                  output = net(images)
+                  avg_loss += criterion(output, labels).sum()
+                  pred = output.data.max(1)[1]
+                  total_correct += pred.eq(labels.data.view_as(pred)).sum()
+                  pred_total.extend(list(pred.data.cpu().numpy()))
+                  label_total.extend(list(labels.data.cpu().numpy()))
+          acc_test = [0] * 10; cnt_test = [0] * 10
+          for p, l in zip(pred_total, label_total):
+            acc_test[l] += int(p == l)
+            cnt_test[l] += 1
+          tmp = ""
+          for k in range(10):
+            acc_test[k] /= float(cnt_test[k])
+            tmp += "%.2f  " % acc_test[k]
+          logprint(tmp + "-- test acc")
+    
+          avg_loss /= len(data_test)
+          logprint('E%dS%d: Test Avg. Loss: %f, Accuracy: %f' % (epoch, i, avg_loss.data.item(), 
+              float(total_correct) / len(data_test)))
+          accr = round(float(total_correct) / len(data_test), 4)
+          if accr > accr_best:
+              torch.save(net, opt.output_dir + 'student')
+              accr_best = accr
