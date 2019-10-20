@@ -40,6 +40,8 @@ parser.add_argument('--lr_S', type=float, default=2e-3, help='learning rate')
 parser.add_argument('--latent_dim', type=int, default=100, help='dimensionality of the latent space')
 parser.add_argument('--img_size', type=int, default=32, help='size of each image dimension')
 parser.add_argument('--channels', type=int, default=1, help='number of image channels')
+parser.add_argument('--num_class', type=int, default=10)
+parser.add_argument('--num_iter_per_epoch', type=int, default=120)
 parser.add_argument('--oh', type=float, default=1, help='one hot loss')
 parser.add_argument('--ie', type=float, default=5, help='information entropy loss')
 parser.add_argument('--a', type=float, default=0.1, help='activation loss')
@@ -57,6 +59,9 @@ parser.add_argument('--plot_train_feat', action="store_true")
 parser.add_argument('--which_lenet', type=str, default="")
 parser.add_argument('--adjust_sampler', action="store_true")
 parser.add_argument('--test_interval', type=int, default=120)
+parser.add_argument('--show_interval', type=int, default=10)
+parser.add_argument('--save_interval', type=int, default=100)
+parser.add_argument('--momentum_cnt', type=int, default=0.9)
 opt = parser.parse_args()
 if opt.dataset == "cifar10":
   opt.channels = 3
@@ -149,12 +154,12 @@ class Generator(nn.Module):
         img = self.conv_blocks2(img)
         return img
         
-generator = Generator().cuda()
-
+# set up data
 if opt.dataset == "cifar10":
   opt.data= "/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_CIFAR10"
   opt.teacher_dir = "CIFAR10_model/"
-  
+
+# set up model
 teacher = torch.load(opt.teacher_dir + '/teacher').cuda()
 teacher.eval()
 criterion = torch.nn.CrossEntropyLoss().cuda()
@@ -165,8 +170,13 @@ if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
     pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons_2/w*/*E23S0*.pth"
   pretrained = check_path(pretrained)
   teacher = LeNet5_2neurons(pretrained).eval().cuda()
-
+if opt.dataset == "MNIST": # set up embed net
+  pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
+  pretrained = check_path(pretrained)
+  embed_net = LeNet5_2neurons(pretrained).eval().cuda()
+  fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
 teacher = nn.DataParallel(teacher)
+generator = Generator().cuda()
 generator = nn.DataParallel(generator)
 
 def kdloss(y, teacher_scores):
@@ -175,8 +185,8 @@ def kdloss(y, teacher_scores):
     l_kl = F.kl_div(p, q, size_average=False)  / y.shape[0]
     return l_kl
 
-if opt.dataset == 'MNIST':    
-    # Configure data loader   
+if opt.dataset == 'MNIST':
+    # Configure data loader
     net = LeNet5Half().cuda()
     net = nn.DataParallel(net)
     data_test = MNIST(opt.data,
@@ -192,18 +202,18 @@ if opt.dataset == 'MNIST':
     optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
     optimizer_S = torch.optim.Adam(net.parameters(), lr=opt.lr_S)
 
-if opt.dataset != 'MNIST':  
+if opt.dataset != 'MNIST':
     transform_test = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])
-    if opt.dataset == 'cifar10': 
+    if opt.dataset == 'cifar10':
         net = resnet.ResNet18().cuda()
         net = nn.DataParallel(net)
         data_test = CIFAR10(opt.data,
                           train=False,
                           transform=transform_test)
-    if opt.dataset == 'cifar100': 
+    if opt.dataset == 'cifar100':
         net = resnet.ResNet18(num_classes=100).cuda()
         net = nn.DataParallel(net)
         data_test = CIFAR100(opt.data,
@@ -238,23 +248,17 @@ logprint(opt.__dict__)
 # ----------
 #  Training
 # ----------
-if opt.dataset == "MNIST":
-  pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
-  pretrained = check_path(pretrained)
-  embed_net = LeNet5_2neurons(pretrained).eval().cuda()
-  fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
-
 batches_done = 0
-sample_prob = torch.ones(10) / 10
-num_sample_per_class = [0] * 10
-history_acc = [1] * 10; history_kld = [0] * 10
+sample_prob = torch.ones(opt.num_class) / opt.num_class
+num_sample_per_class = [0] * opt.num_class
+history_acc = [1] * opt.num_class; history_kld = [0] * opt.num_class
 for epoch in range(opt.n_epochs):
     # total_correct = 0
     # avg_loss = 0.0
     if opt.dataset != 'MNIST':
         adjust_learning_rate(optimizer_S, epoch, opt.lr_S)
 
-    for i in range(120):
+    for iter in range(opt.num_iter_per_epoch):
         net.train()
         if opt.mode == "original":
           z = Variable(torch.randn(opt.batch_size, opt.latent_dim)).cuda()
@@ -265,11 +269,11 @@ for epoch in range(opt.n_epochs):
           
           # --- 2019/10/12: visualize
           label = outputs_T.argmax(dim=1); if_right = torch.ones_like(label)
-          if opt.plot_train_feat and i % 10 == 0:
+          if opt.plot_train_feat and iter % 10 == 0:
             feat = embed_net.forward_2neurons(gen_imgs)
             ax_train = feat_visualize(ax_train, feat.data.cpu().numpy(), label.data.cpu().numpy(), if_right.data.cpu().numpy())
-            if i % 100 == 0:
-              save_train_feat_path = pjoin(rec_img_path, "%s_E%sS%s_feat-visualization-train.jpg" % (ExpID, epoch, i))
+            if iter % opt.save_interval == 0:
+              save_train_feat_path = pjoin(rec_img_path, "%s_E%sS%s_feat-visualization-train.jpg" % (ExpID, epoch, iter))
               ax_train.set_xlim([-20, 200])
               ax_train.set_ylim([-20, 200])
               fig_train.savefig(save_train_feat_path, dpi=400)
@@ -288,13 +292,13 @@ for epoch in range(opt.n_epochs):
           optimizer_G.step()
           optimizer_S.step()
           
-          # analyze label_T and thus adjust sampler
+          # analyze label_T
           logtmp = ""
-          for ii in range(10):
-            num_sample_per_class[ii] = num_sample_per_class[ii] * 0.9 + sum(label.cpu().data.numpy() == ii) * 0.1
-            cnt = num_sample_per_class[ii]
+          for c in range(opt.num_class):
+            num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + sum(label.cpu().data.numpy() == c) * (1-opt.momentum_cnt)
+            cnt = num_sample_per_class[c]
             logtmp += "%d " % int(cnt)
-          if i % 10 == 0:
+          if iter % 10 == 0:
             logprint(logtmp)
           
         elif opt.mode == "ours":
@@ -304,7 +308,7 @@ for epoch in range(opt.n_epochs):
           noise2 = torch.rand(half_bs, opt.latent_dim).cuda() * 2 - 1
           noise_concat = torch.cat([noise1, noise2], dim=0)
           one_hot = OneHotCategorical(sample_prob)
-          onehot_label = one_hot.sample([half_bs]).view([half_bs, 10]).cuda()
+          onehot_label = one_hot.sample([half_bs]).view([half_bs, opt.num_class]).cuda()
           pseudo_label_concat = torch.cat([onehot_label, onehot_label], dim=0)
           label = pseudo_label_concat.argmax(dim=1)
           x = torch.cat([noise_concat, pseudo_label_concat], dim=1)
@@ -315,68 +319,78 @@ for epoch in range(opt.n_epochs):
           
           # analyze label_T and thus adjust sampler
           logtmp = ""
-          for ii in range(10):
-            tmp = sum(label_T.cpu().data.numpy() == ii)
-            if num_sample_per_class[ii]:
-              num_sample_per_class[ii] = num_sample_per_class[ii] * 0.95 + tmp * 0.05
+          for c in range(opt.num_class):
+            tmp = sum(label_T.cpu().data.numpy() == c)
+            if num_sample_per_class[c]:
+              num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + tmp * (1-opt.momentum_cnt)
             else:
-              num_sample_per_class[ii] = tmp
-            cnt = num_sample_per_class[ii]
+              num_sample_per_class[c] = tmp
+            cnt = num_sample_per_class[c]
             logtmp += "%.2f  " % (cnt / opt.batch_size)
             if opt.adjust_sampler:
-              sample_prob[ii] = 1./1 if cnt == 0 else 1./cnt
+              sample_prob[c] = 1./1 if cnt == 0 else 1./cnt
           if opt.adjust_sampler:
             sample_prob = sample_prob / sample_prob.sum()
-          if i % 10 == 9:
+          if iter % 10 == 9:
             logprint(logtmp + "-- real class ratio\n")
-
-          loss_one_hot = criterion(outputs_T, label) ## loss 1
+          
+          # cosine loss
           embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
           x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
           y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
           if opt.use_sign:
-            loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() ## loss 2
+            loss_activation = y_cos / x_cos * torch.sign(x_cos).detach()
           else:
-            # p = 0.2
-            dynamic_sign = 1 # if torch.rand(1).item() > p else -1
-            loss_activation = dynamic_sign * y_cos / x_cos # * torch.sign(x_cos).detach()
+            loss_activation = y_cos / x_cos
           if 0 in history_acc or np.mean(history_acc) < 0.40:
             lw_a = 0
           else:
             lw_a = opt.a
-          loss_G = loss_activation * lw_a + loss_one_hot * opt.oh
+          loss_G = loss_activation * lw_a
+          
+          # one hot loss
+          if opt.oh:
+            loss_one_hot = criterion(outputs_T, label)
+            loss_G += loss_one_hot * opt.oh
+          else:
+            loss_one_hot = torch.zeros(1)
+          
+          # ie loss
           if opt.ie:
             softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
-
+            
+            # print train acc for check
             tmp1 = ""; tmp2 = ""
-            for c in range(10):
+            for c in range(opt.num_class):
               tmp1 += "%.2f  " % history_acc[c]
               tmp2 += "%.2f  " % history_kld[c]
-            if i % 10 == 0:
+            if iter % opt.show_interval == 0:
               logprint(tmp1 + "-- train history_acc")
               # logprint(tmp2 + "-- train kld loss")
             
-            if i % 10 == 0:
-              aa = np.zeros(10)
-              for k in range(10):
+            if iter % opt.show_interval == 0:
+              aa = np.zeros(opt.num_class)
+              for k in range(opt.num_class):
                 aa[k] = 0.1 if (0 in history_acc or np.mean(history_acc) < 0.40) else 1.0 / history_acc[k]
               aa = aa / aa.sum()
               tmp = ""
-              for k in range(10):
+              for k in range(opt.num_class):
                 tmp += "%.2f  " % aa[k]
               logprint(tmp + "-- expected class ratio")
-            dist_wanted = torch.from_numpy(np.array(aa)).float().cuda()
-            loss_information_entropy = F.kl_div(softmax_o_T.log(), dist_wanted, reduction="sum")
-            # loss_information_entropy = (softmax_o_T * torch.log10(softmax_o_T)).sum()
-
+            dist_expect = torch.from_numpy(np.array(aa)).float().cuda()
+            loss_information_entropy = F.kl_div(softmax_o_T.log(), dist_expect, reduction="sum") # my dist adjust loss
+            # loss_information_entropy = (softmax_o_T * torch.log10(softmax_o_T)).sum() # original ie loss from DFL
             loss_G += loss_information_entropy * opt.ie
           else:
             loss_information_entropy = torch.zeros(1)
+          
           if opt.lw_norm:
             loss_G += -features_T.abs().mean() * opt.lw_norm
+          
           if opt.lw_adv:
             outputs_S = net(gen_imgs)
             loss_G += -criterion(outputs_S, label_T.detach()) * opt.lw_adv
+          
           optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
           
           # update S
@@ -385,41 +399,41 @@ for epoch in range(opt.n_epochs):
           if_right = pred.eq(label_T.view_as(pred))
           trainacc = if_right.sum().item() / label_T.size(0)
           
-          # print per-class info
-          acc = [0] * 10; cnt = [1] * 10; kld = [0] * 10
+          # print per-class status of the Student
+          acc = [0] * opt.num_class; cnt = [1] * opt.num_class; kld = [0] * opt.num_class
           for oS, oT in zip(outputs_S, outputs_T):
             lT = oT.argmax(); lS = oS.argmax()
             acc[lT] += int(lT == lS)
             cnt[lT] += 1
             kld[lT] += F.kl_div(F.log_softmax(oS, dim=0), F.softmax(oT, dim=0)).item()
-          for k in range(10):
-            history_acc[k] = history_acc[k] * 0 + acc[k] * 1.0 / cnt[k]
-            history_kld[k] = history_kld[k] * 0 + kld[k] * 1.0 / cnt[k]
+          for c in range(opt.num_class):
+            history_acc[c] = history_acc[c] * 0 + acc[c] * 1.0 / cnt[c]
+            history_kld[c] = history_kld[c] * 0 + kld[c] * 1.0 / cnt[c]
           
           loss_kd = kdloss(outputs_S, outputs_T.detach())
           optimizer_S.zero_grad(); loss_kd.backward(); optimizer_S.step()
           
           # visualize
           if_right = torch.ones_like(label_T)
-          if opt.plot_train_feat and i % 10 == 0:
+          if opt.plot_train_feat and iter % 10 == 0:
             feat = embed_net.forward_2neurons(gen_imgs)
             ax_train = feat_visualize(ax_train, feat.data.cpu().numpy(), label_T.data.cpu().numpy(), if_right.data.cpu().numpy())
-            if i % 100 == 0:
-              save_train_feat_path = pjoin(rec_img_path, "%s_E%sS%s_feat-visualization-train.jpg" % (ExpID, epoch, i))
+            if iter % opt.save_interval == 0:
+              save_train_feat_path = pjoin(rec_img_path, "%s_E%sS%s_feat-visualization-train.jpg" % (ExpID, epoch, iter))
               ax_train.set_xlim([-20, 200])
               ax_train.set_ylim([-20, 200])
               fig_train.savefig(save_train_feat_path, dpi=400)
               fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
           # ---
         
-        if i == 1:
+        if iter == 1:
             logprint("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs, loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
-        if i % opt.test_interval == 0:
+        
+        if iter % opt.test_interval == 0:
           total_correct = 0
           avg_loss = 0
           with torch.no_grad():
-              pred_total = []
-              label_total = []
+              pred_total = []; label_total = []
               for _, (images, labels) in enumerate(data_test_loader):
                   images = images.cuda()
                   labels = labels.cuda()
@@ -430,20 +444,20 @@ for epoch in range(opt.n_epochs):
                   total_correct += pred.eq(labels.data.view_as(pred)).sum()
                   pred_total.extend(list(pred.data.cpu().numpy()))
                   label_total.extend(list(labels.data.cpu().numpy()))
-          acc_test = [0] * 10; cnt_test = [0] * 10
+          acc_test = [0] * opt.num_class; cnt_test = [0] * opt.num_class
           for p, l in zip(pred_total, label_total):
             acc_test[l] += int(p == l)
             cnt_test[l] += 1
           tmp = ""
-          for k in range(10):
-            acc_test[k] /= float(cnt_test[k])
-            tmp += "%.2f  " % acc_test[k]
+          for c in range(opt.num_class):
+            acc_test[c] /= float(cnt_test[c])
+            tmp += "%.2f  " % acc_test[c]
           logprint(tmp + "-- test acc")
     
           avg_loss /= len(data_test)
-          logprint('E%dS%d: Test Avg. Loss: %f, Accuracy: %f' % (epoch, i, avg_loss.data.item(), 
+          logprint("=" * (int(ExpID[-1])+1) + '> E%dS%d: Test Avg. Loss: %f, Accuracy: %f' % (epoch, iter, avg_loss.data.item(), 
               float(total_correct) / len(data_test)))
           accr = round(float(total_correct) / len(data_test), 4)
           if accr > accr_best:
-              torch.save(net, opt.output_dir + 'student')
+              torch.save(net, opt.output_dir + '/student')
               accr_best = accr
