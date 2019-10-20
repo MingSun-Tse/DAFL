@@ -327,7 +327,7 @@ for epoch in range(opt.n_epochs):
               sample_prob[ii] = 1./1 if cnt == 0 else 1./cnt
           if opt.adjust_sampler:
             sample_prob = sample_prob / sample_prob.sum()
-          if i % 11 == 0:
+          if i % 10 == 9:
             logprint(logtmp + "-- real class ratio\n")
 
           loss_one_hot = criterion(outputs_T, label) ## loss 1
