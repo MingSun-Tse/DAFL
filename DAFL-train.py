@@ -47,6 +47,7 @@ parser.add_argument('--ie', type=float, default=5, help='information entropy los
 parser.add_argument('--a', type=float, default=0.1, help='activation loss')
 parser.add_argument('--lw_norm', type=float, default=0)
 parser.add_argument('--lw_adv', type=float, default=0)
+parser.add_argument('--lw_prob_var', type=float, default=0)
 parser.add_argument('--output_dir', type=str, default='MNIST_model/')
 parser.add_argument('-p', '--project_name', type=str, default="")
 parser.add_argument('--resume', type=str, default="")
@@ -257,7 +258,9 @@ for name, param in generator.named_parameters():
 batches_done = 0
 sample_prob = torch.ones(opt.num_class) / opt.num_class
 num_sample_per_class = [0] * opt.num_class
-history_acc_S = [1] * opt.num_class; history_kld_S = [0] * opt.num_class
+history_acc_S = [0] * opt.num_class
+history_kld_S = [0] * opt.num_class
+history_prob_var = [0] * opt.num_class
 for epoch in range(opt.n_epochs):
     # total_correct = 0
     # avg_loss = 0.0
@@ -297,18 +300,13 @@ for epoch in range(opt.n_epochs):
           loss.backward()
           optimizer_G.step()
           optimizer_S.step()
-          
-          # 2019/10/21 EMA to avoid collpase
-          for name, param in generator.named_parameters():
-            if param.requires_grad:
-              param.data = ema_G(name, param.data)
-          
+
           # analyze label_T
           logtmp = ""
           for c in range(opt.num_class):
-            num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + sum(label.cpu().data.numpy() == c) * (1-opt.momentum_cnt)
-            cnt = num_sample_per_class[c]
-            logtmp += "%d  " % int(cnt)
+            tmp = sum(label_T.cpu().data.numpy() == c)
+            num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + tmp * (1-opt.momentum_cnt) if num_sample_per_class[c] else tmp
+            logtmp += "%.2f  " % (num_sample_per_class[c] / opt.batch_size)
           if step % opt.show_interval == 0:
             logprint(logtmp + ("-- real class ratio (E%dS%d)" % (epoch, step)))
           
@@ -332,13 +330,12 @@ for epoch in range(opt.n_epochs):
           outputs_T, features_T = teacher(gen_imgs, out_feature=1)
           label_T = outputs_T.argmax(dim=1) # 2019/10/18: for adv loss
           
-          # analyze label_T and thus adjust sampler
+          # analyze label_T
           logtmp = ""
           for c in range(opt.num_class):
             tmp = sum(label_T.cpu().data.numpy() == c)
             num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + tmp * (1-opt.momentum_cnt) if num_sample_per_class[c] else tmp
-            cnt = num_sample_per_class[c]
-            logtmp += "%.2f  " % (cnt / opt.batch_size)
+            logtmp += "%.2f  " % (num_sample_per_class[c] / opt.batch_size)
           if step % opt.update_dist_interval == (opt.update_dist_interval-1):
             logprint(logtmp + ("-- real class ratio (E%dS%d)" % (epoch, step)))
           
@@ -356,6 +353,18 @@ for epoch in range(opt.n_epochs):
             loss_G += loss_one_hot * opt.oh
           else:
             loss_one_hot = torch.zeros(1)
+          
+          # prob variance per class loss
+          if opt.lw_prob_var:
+            var = torch.var(F.softmax(outputs_T, dim=1), dim=0)
+            logtmp = ""
+            for c in range(opt.num_class):
+              history_prob_var[c] = history_prob_var[c] * opt.momentum_cnt + var[c] * (1-opt.momentum_cnt) \
+                  if history_prob_var[c] else var[c]
+              logtmp += "%.2f  " % history_prob_var[c].item()
+            loss_G += var.mean() * opt.lw_prob_var
+            if step % opt.update_dist_interval == 0:
+              logprint(logtmp + "-- prob var per class (E%dS%d)" % (epoch, step))
           
           # ie loss
           if opt.ie:
@@ -376,7 +385,7 @@ for epoch in range(opt.n_epochs):
                 logtmp += "%.2f  " % aa[c]
               logprint(logtmp + ("-- expected class ratio (E%dS%d)" % (epoch, step)))
             dist_expect = torch.from_numpy(np.array(aa)).float().cuda()
-            softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
+            softmax_o_T = F.softmax(outputs_T, dim = 1).mean(dim = 0)
             loss_information_entropy = F.kl_div(softmax_o_T.log(), dist_expect, reduction="sum") # my dist adjust loss
             loss_G += loss_information_entropy * opt.ie
           else:
@@ -389,7 +398,11 @@ for epoch in range(opt.n_epochs):
             outputs_S = net(gen_imgs)
             loss_G += -criterion(outputs_S, label_T.detach()) * opt.lw_adv
           
+          # 2019/10/21 EMA to avoid collpase
           optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
+          for name, param in generator.named_parameters():
+            if param.requires_grad:
+              param.data = ema_G(name, param.data)
           
           # update S
           outputs_S = net(gen_imgs.detach())
