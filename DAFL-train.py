@@ -27,7 +27,7 @@ from lenet import LeNet5Half
 from torchvision.datasets import CIFAR10
 from torchvision.datasets import CIFAR100
 import resnet
-from my_utils import LogPrint, set_up_dir, get_CodeID, feat_visualize, check_path
+from my_utils import LogPrint, set_up_dir, get_CodeID, feat_visualize, check_path, EMA
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
@@ -246,6 +246,11 @@ opt.ExpID = ExpID
 opt.CodeID = get_CodeID()
 logprint(opt.__dict__)
 
+ema_G = EMA(0.9)
+for name, param in generator.named_parameters():
+  if param.requires_grad:
+    ema_G.register(name, param.data)
+
 # ----------
 #  Training
 # ----------
@@ -293,6 +298,11 @@ for epoch in range(opt.n_epochs):
           optimizer_G.step()
           optimizer_S.step()
           
+          # 2019/10/21 EMA to avoid collpase
+          for name, param in generator.named_parameters():
+            if param.requires_grad:
+              param.data = ema_G(name, param.data)
+          
           # analyze label_T
           logtmp = ""
           for c in range(opt.num_class):
@@ -300,7 +310,7 @@ for epoch in range(opt.n_epochs):
             cnt = num_sample_per_class[c]
             logtmp += "%d  " % int(cnt)
           if step % opt.show_interval == 0:
-            logprint(logtmp + ("-- real class ratio (E%dS%d)\n" % (epoch, step)))
+            logprint(logtmp + ("-- real class ratio (E%dS%d)" % (epoch, step)))
           
         elif opt.mode == "ours":
           # 2019/10/20: automatically adjust the target dist for better Student learning
@@ -330,7 +340,7 @@ for epoch in range(opt.n_epochs):
             cnt = num_sample_per_class[c]
             logtmp += "%.2f  " % (cnt / opt.batch_size)
           if step % opt.update_dist_interval == (opt.update_dist_interval-1):
-            logprint(logtmp + ("-- real class ratio (E%dS%d)\n" % (epoch, step)))
+            logprint(logtmp + ("-- real class ratio (E%dS%d)" % (epoch, step)))
           
           # cos loss
           embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
