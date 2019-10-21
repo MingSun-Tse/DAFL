@@ -42,12 +42,14 @@ parser.add_argument('--img_size', type=int, default=32, help='size of each image
 parser.add_argument('--channels', type=int, default=1, help='number of image channels')
 parser.add_argument('--num_class', type=int, default=10)
 parser.add_argument('--num_iter_per_epoch', type=int, default=120)
+# ---
 parser.add_argument('--oh', type=float, default=1, help='one hot loss')
 parser.add_argument('--ie', type=float, default=5, help='information entropy loss')
 parser.add_argument('--a', type=float, default=0.1, help='activation loss')
 parser.add_argument('--lw_norm', type=float, default=0)
 parser.add_argument('--lw_adv', type=float, default=0)
 parser.add_argument('--lw_prob_var', type=float, default=0)
+# ---
 parser.add_argument('--output_dir', type=str, default='MNIST_model/')
 parser.add_argument('-p', '--project_name', type=str, default="")
 parser.add_argument('--resume', type=str, default="")
@@ -227,7 +229,7 @@ if opt.dataset != 'MNIST':
     optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
     optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
 
-def adjust_learning_rate(optimizer, epoch, learing_rate):
+def adjust_learning_rate_ours(optimizer, epoch, learing_rate):
     if epoch < 160: # 0.4 * opt.n_epochs: # 800:
         lr = learing_rate
     elif epoch < 320: #0.8 * opt.n_epochs: # 1600:
@@ -236,6 +238,16 @@ def adjust_learning_rate(optimizer, epoch, learing_rate):
         lr = 0.01 * learing_rate
     else:
         lr = 0.001 * learning_rate
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+def adjust_learning_rate_original(optimizer, epoch, learing_rate):
+    if epoch < 800:
+        lr = learing_rate
+    elif epoch < 1600:
+        lr = 0.1 * learing_rate
+    else:
+        lr = 0.01 * learning_rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
         
@@ -258,14 +270,17 @@ for name, param in generator.named_parameters():
 batches_done = 0
 sample_prob = torch.ones(opt.num_class) / opt.num_class
 num_sample_per_class = [0] * opt.num_class
-history_acc_S = [0] * opt.num_class
-history_kld_S = [0] * opt.num_class
-history_prob_var = [0] * opt.num_class
+history_acc_S        = [0] * opt.num_class
+history_kld_S        = [0] * opt.num_class
+history_prob_var     = [0] * opt.num_class
 for epoch in range(opt.n_epochs):
     # total_correct = 0
     # avg_loss = 0.0
     if opt.dataset != 'MNIST':
-        adjust_learning_rate(optimizer_S, epoch, opt.lr_S)
+      if opt.mode == "original":
+        adjust_learning_rate_original(optimizer_S, epoch, opt.lr_S)
+      else:
+        adjust_learning_rate_ours(optimizer_S, epoch, opt.lr_S)
 
     for step in range(opt.num_iter_per_epoch):
         net.train()
