@@ -279,8 +279,10 @@ for epoch in range(opt.n_epochs):
     if opt.dataset != 'MNIST':
       if opt.mode == "original":
         adjust_learning_rate_original(optimizer_S, epoch, opt.lr_S)
-      else:
+      elif opt.mode == "ours":
         adjust_learning_rate_ours(optimizer_S, epoch, opt.lr_S)
+      else:
+        raise NotImplementedError
 
     for step in range(opt.num_iter_per_epoch):
         net.train()
