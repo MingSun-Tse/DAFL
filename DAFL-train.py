@@ -321,7 +321,7 @@ for epoch in range(opt.n_epochs):
           # analyze label_T
           logtmp = ""
           for c in range(opt.num_class):
-            tmp = sum(label_T.cpu().data.numpy() == c)
+            tmp = sum(label.cpu().data.numpy() == c)
             num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + tmp * (1-opt.momentum_cnt) if num_sample_per_class[c] else tmp
             logtmp += "%.2f  " % (num_sample_per_class[c] / opt.batch_size)
           if step % opt.show_interval == 0:
