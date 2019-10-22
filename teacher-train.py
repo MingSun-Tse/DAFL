@@ -192,9 +192,9 @@ def main():
     for e in range(1, epoch):
         train_and_test(e)
     if args.which_net == "embed":
-      torch.save(net,args.output_dir + 'teacher_embed')
+      torch.save(net,args.output_dir + '/teacher_embed')
     else:
-      torch.save(net,args.output_dir + 'teacher')
+      torch.save(net,args.output_dir + '/teacher')
  
  
 if __name__ == '__main__':
