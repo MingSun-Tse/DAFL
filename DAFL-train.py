@@ -496,5 +496,6 @@ for epoch in range(opt.n_epochs):
               float(total_correct) / len(data_test)))
           accr = round(float(total_correct) / len(data_test), 4)
           if accr > accr_best:
-              torch.save(net, opt.output_dir + '/student')
               accr_best = accr
+              torch.save(net, opt.output_dir + '/student')
+              torch.save(generator, opt.output_dir + '/generator')
