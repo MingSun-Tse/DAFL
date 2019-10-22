@@ -70,11 +70,9 @@ opt = parser.parse_args()
 if opt.dataset != "MNIST":
   opt.channels = 3
 # img_shape = (opt.channels, opt.img_size, opt.img_size)
-
-cuda = True
-accr = 0
-accr_best = 0
-
+if opt.dataset == "cifar100":
+  opt.num_class = 100
+  
 class LeNet5_2neurons(nn.Module):
   def __init__(self, model=None, fixed=False):
     super(LeNet5_2neurons, self).__init__()
@@ -128,7 +126,7 @@ class Generator(nn.Module):
         if opt.mode == "original":
           self.l1 = nn.Sequential(nn.Linear(opt.latent_dim, 128*self.init_size**2))
         elif opt.mode == "ours":
-          self.l1 = nn.Sequential(nn.Linear(opt.latent_dim+10, 128*self.init_size**2)) # 2019/10/08, test my losses
+          self.l1 = nn.Sequential(nn.Linear(opt.latent_dim, 128*self.init_size**2)) # 2019/10/08, test my losses
         else:
           raise NotImplementedError
         self.conv_blocks0 = nn.Sequential(
@@ -157,14 +155,14 @@ class Generator(nn.Module):
         img = nn.functional.interpolate(img,scale_factor=2)
         img = self.conv_blocks2(img)
         return img
-        
+
 # set up data and teacher path
 if opt.dataset == "cifar10":
   opt.data = "/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR10"
   opt.teacher_dir = "CIFAR10_model/"
 if opt.dataset == "cifar100":
-  opt.data = "/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR10"
-  opt.teacher_dir == "Experiments/*094454*/weights/"
+  opt.data = "/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR100"
+  opt.teacher_dir = "Experiments/SERVER218-20191022-094454_teacher-cifar100/weights/"
 
 # set up model
 teacher = torch.load(opt.teacher_dir + '/teacher').eval().cuda()
@@ -238,9 +236,9 @@ if opt.dataset != 'MNIST':
     optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
 
 def adjust_learning_rate_ours(optimizer, epoch, learing_rate):
-    if epoch < 160: # 0.4 * opt.n_epochs: # 800:
+    if epoch < 160:
         lr = learing_rate
-    elif epoch < 320: #0.8 * opt.n_epochs: # 1600:
+    elif epoch < 320:
         lr = 0.1 * learing_rate
     elif epoch < 480:
         lr = 0.01 * learing_rate
@@ -262,15 +260,18 @@ def adjust_learning_rate_original(optimizer, epoch, learing_rate):
 # set up log dirs
 TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.debug)
 opt.output_dir = weights_path
-logprint = LogPrint(log, ExpID)
 opt.ExpID = ExpID
 opt.CodeID = get_CodeID()
+logprint = LogPrint(log, ExpID)
 logprint(opt.__dict__)
 
 # ----------
 #  Training
 # ----------
 # batches_done = 0
+cuda = True
+accr = 0
+accr_best = 0
 sample_prob = torch.ones(opt.num_class) / opt.num_class
 num_sample_per_class = [0] * opt.num_class
 history_acc_S        = [0] * opt.num_class
@@ -340,11 +341,14 @@ for epoch in range(opt.n_epochs):
           noise1 = torch.randn(half_bs, opt.latent_dim).cuda()
           noise2 = torch.randn(half_bs, opt.latent_dim).cuda()
           noise_concat = torch.cat([noise1, noise2], dim=0)
-          one_hot = OneHotCategorical(sample_prob)
-          onehot_label = one_hot.sample([half_bs]).view([half_bs, opt.num_class]).cuda()
-          pseudo_label_concat = torch.cat([onehot_label, onehot_label], dim=0)
-          label = pseudo_label_concat.argmax(dim=1)
-          x = torch.cat([noise_concat, pseudo_label_concat], dim=1)
+          # --- 2019/10/22: not use condition anymore
+          # one_hot = OneHotCategorical(sample_prob)
+          # onehot_label = one_hot.sample([half_bs]).view([half_bs, opt.num_class]).cuda()
+          # pseudo_label_concat = torch.cat([onehot_label, onehot_label], dim=0)
+          # label = pseudo_label_concat.argmax(dim=1)
+          # x = torch.cat([noise_concat, pseudo_label_concat], dim=1)
+          # ---
+          x = noise_concat
           
           gen_imgs = generator(x)
           outputs_T, features_T = teacher(gen_imgs, out_feature=1)
