@@ -67,9 +67,9 @@ parser.add_argument('--save_interval', type=int, default=100)
 parser.add_argument('--update_dist_interval', type=int, default=50)
 parser.add_argument('--momentum_cnt', type=float, default=0.9)
 opt = parser.parse_args()
-if opt.dataset == "cifar10":
+if opt.dataset != "MNIST":
   opt.channels = 3
-img_shape = (opt.channels, opt.img_size, opt.img_size)
+# img_shape = (opt.channels, opt.img_size, opt.img_size)
 
 cuda = True
 accr = 0
@@ -158,14 +158,16 @@ class Generator(nn.Module):
         img = self.conv_blocks2(img)
         return img
         
-# set up data
+# set up data and teacher path
 if opt.dataset == "cifar10":
-  opt.data= "/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_CIFAR10"
+  opt.data = "/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR10"
   opt.teacher_dir = "CIFAR10_model/"
+if opt.dataset == "cifar100":
+  opt.data = "/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR10"
+  opt.teacher_dir == "Experiments/*094454*/weights/"
 
 # set up model
-teacher = torch.load(opt.teacher_dir + '/teacher').cuda()
-teacher.eval()
+teacher = torch.load(opt.teacher_dir + '/teacher').eval().cuda()
 criterion = torch.nn.CrossEntropyLoss().cuda()
 if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
   if opt.which_lenet == "_2neurons1":
@@ -183,6 +185,12 @@ teacher = nn.DataParallel(teacher)
 generator = Generator().cuda()
 generator = nn.DataParallel(generator)
 
+# set up EMA
+ema_G = EMA(0.9)
+for name, param in generator.named_parameters():
+  if param.requires_grad:
+    ema_G.register(name, param.data)
+    
 def kdloss(y, teacher_scores):
     p = F.log_softmax(y, dim=1)
     q = F.softmax(teacher_scores, dim=1)
@@ -259,15 +267,10 @@ opt.ExpID = ExpID
 opt.CodeID = get_CodeID()
 logprint(opt.__dict__)
 
-ema_G = EMA(0.9)
-for name, param in generator.named_parameters():
-  if param.requires_grad:
-    ema_G.register(name, param.data)
-
 # ----------
 #  Training
 # ----------
-batches_done = 0
+# batches_done = 0
 sample_prob = torch.ones(opt.num_class) / opt.num_class
 num_sample_per_class = [0] * opt.num_class
 history_acc_S        = [0] * opt.num_class
