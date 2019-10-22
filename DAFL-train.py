@@ -236,23 +236,23 @@ if opt.dataset != 'MNIST':
     optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
     optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
 
-def adjust_learning_rate_ours(optimizer, epoch, learing_rate):
+def adjust_learning_rate_ours(optimizer, epoch, learning_rate):
     if epoch < 160:
-        lr = learing_rate
+        lr = learning_rate
     elif epoch < 320:
-        lr = 0.1 * learing_rate
+        lr = 0.1 * learning_rate
     elif epoch < 480:
-        lr = 0.01 * learing_rate
+        lr = 0.01 * learning_rate
     else:
         lr = 0.001 * learning_rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def adjust_learning_rate_original(optimizer, epoch, learing_rate):
+def adjust_learning_rate_original(optimizer, epoch, learning_rate):
     if epoch < 800:
-        lr = learing_rate
+        lr = learning_rate
     elif epoch < 1600:
-        lr = 0.1 * learing_rate
+        lr = 0.1 * learning_rate
     else:
         lr = 0.01 * learning_rate
     for param_group in optimizer.param_groups:
