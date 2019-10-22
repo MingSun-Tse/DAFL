@@ -318,7 +318,7 @@ for epoch in range(opt.n_epochs):
           optimizer_G.step()
           optimizer_S.step()
 
-          # analyze label_T
+          # analyze label
           logtmp = ""
           for c in range(opt.num_class):
             tmp = sum(label.cpu().data.numpy() == c)
