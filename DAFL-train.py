@@ -34,6 +34,7 @@ parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','ci
 parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
 parser.add_argument('--teacher_dir', type=str, default='MNIST_model/')
 parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
+parser.add_argument('--resume_epoch', type=int, default=0)
 parser.add_argument('-b', '--batch_size', type=int, default=512, help='size of the batches')
 parser.add_argument('--lr_G', type=float, default=0.2, help='learning rate')
 parser.add_argument('--lr_S', type=float, default=2e-3, help='learning rate')
@@ -256,7 +257,13 @@ def adjust_learning_rate_original(optimizer, epoch, learing_rate):
         lr = 0.01 * learning_rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-        
+
+if opt.resume:
+  assert(opt.resume_epoch > 0)
+  net = torch.load(opt.resume + "/student")
+  if os.path.exists(opt.resume + "/generator"):
+    generator = torch.load(opt.resume + "/generator")
+
 # set up log dirs
 TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.debug)
 opt.output_dir = weights_path
@@ -277,7 +284,7 @@ num_sample_per_class = [0] * opt.num_class
 history_acc_S        = [0] * opt.num_class
 history_kld_S        = [0] * opt.num_class
 history_prob_var     = [0] * opt.num_class
-for epoch in range(opt.n_epochs):
+for epoch in range(opt.resume_epoch, opt.n_epochs):
     # total_correct = 0
     # avg_loss = 0.0
     if opt.dataset != 'MNIST':
