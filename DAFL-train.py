@@ -279,35 +279,36 @@ test_acc = []
 max_acc_per_lr = []
 max_acc = 0
 max_acc_index = 0
-cnt_decay_lr = 0
-cnt_decay_lr_max = 3
-max_acc_interval = 10
+current_stage = 0
+max_stage = 3
+max_acc_interval = [12, 10, 10]
 def test_save_adjust_lr(optimizer, epoch, step):
-  global test_acc, max_acc_per_lr, max_acc, max_acc_index, cnt_decay_lr, cnt_decay_lr_max, max_acc_interval
+  global test_acc, max_acc_per_lr, max_acc, max_acc_index, current_stage, max_stage, max_acc_interval
   acc = test(epoch, step)
   test_acc.append(acc)
   if acc > max_acc:
     max_acc = acc
     max_acc_index = len(test_acc)
-    torch.save(net, opt.output_dir + '/student_stage%d' % cnt_decay_lr)
-    torch.save(generator, opt.output_dir + '/generator_stage%d' % cnt_decay_lr)
+    torch.save(net, opt.output_dir + '/student_stage%d' % current_stage)
+    torch.save(generator, opt.output_dir + '/generator_stage%d' % current_stage)
     logprint("[smile] E%dS%d: max acc updated to %.4f. Student and Generator saved." % (epoch, step, acc))
   else:
     count_down = len(test_acc) - max_acc_index
+    count_down_max = max_acc_interval[current_stage]
     logprint("[smile] E%dS%d: current acc (%.4f) does not beat previous max acc (%.4f). Counting down: %d/%d" 
-        % (epoch, step, acc, max_acc, count_down, max_acc_interval))
-    if count_down > max_acc_interval: # the current lr stage finishes
+        % (epoch, step, acc, max_acc, count_down, count_down_max))
+    if count_down > count_down_max: # the current lr stage finishes
       if opt.dataset == "MNIST": # mnist uses fixed lr
         logprint("[smile] E%dS%d: all training is done. max acc = %.4f" % (epoch, step, max_acc))
         exit(0)
       else:
         max_acc_per_lr.append(max_acc)
-        cnt_decay_lr += 1
-        if max_acc < max(max_acc_per_lr) or cnt_decay_lr >= cnt_decay_lr_max: # the whole training is over
+        current_stage += 1
+        if max_acc < max(max_acc_per_lr) or current_stage >= max_stage: # the whole training is over
           logprint("[smile] E%dS%d: all training is done. max acc = %.4f" % (epoch, step, max(max_acc_per_lr)))
           exit(0)
         else: # the whole training is not over, decay lr and go on
-          new_lr = opt.lr_S * pow(0.1, cnt_decay_lr)
+          new_lr = opt.lr_S * pow(0.1, current_stage)
           logprint("[smile] E%dS%d: current lr stage is over. decay lr and go on training (new: %f)" % (epoch, step, new_lr))
           for param_group in optimizer.param_groups:
             param_group['lr'] = new_lr
