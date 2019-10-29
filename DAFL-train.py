@@ -31,7 +31,7 @@ from my_utils import LogPrint, set_up_dir, get_CodeID, feat_visualize, check_pat
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
-parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
+parser.add_argument('--data', type=str, default='../20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
 parser.add_argument('--teacher_dir', type=str, default='MNIST_model/')
 parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
 parser.add_argument('-b', '--batch_size', type=int, default=512, help='size of the batches')
@@ -158,7 +158,7 @@ class Generator(nn.Module):
         
 # set up data
 if opt.dataset == "cifar10":
-  opt.data= "/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_CIFAR10"
+  opt.data= "../20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR10"
   opt.teacher_dir = "CIFAR10_model/"
 
 # set up model
@@ -167,13 +167,13 @@ teacher.eval()
 criterion = torch.nn.CrossEntropyLoss().cuda()
 if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
   if opt.which_lenet == "_2neurons1":
-    pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
+    pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
   elif opt.which_lenet == "_2neurons2":
-    pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons_2/w*/*E23S0*.pth"
+    pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons_2/w*/*E23S0*.pth"
   pretrained = check_path(pretrained)
   teacher = LeNet5_2neurons(pretrained).eval().cuda()
 if opt.dataset == "MNIST": # set up embed net
-  pretrained = "/home4/wanghuan/Pro*/20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
+  pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
   pretrained = check_path(pretrained)
   embed_net = LeNet5_2neurons(pretrained).eval().cuda()
   fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
@@ -227,13 +227,13 @@ if opt.dataset != 'MNIST':
     optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
     optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
 
-def adjust_learning_rate(optimizer, epoch, learing_rate):
+def adjust_learning_rate(optimizer, epoch, learning_rate):
     if epoch < 160: # 0.4 * opt.n_epochs: # 800:
-        lr = learing_rate
+        lr = learning_rate
     elif epoch < 320: #0.8 * opt.n_epochs: # 1600:
-        lr = 0.1 * learing_rate
+        lr = 0.1 * learning_rate
     elif epoch < 480:
-        lr = 0.01 * learing_rate
+        lr = 0.01 * learning_rate
     else:
         lr = 0.001 * learning_rate
     for param_group in optimizer.param_groups:

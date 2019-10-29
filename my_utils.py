@@ -1,1 +1,1 @@
-/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/util.py
+/home1/wanghuan/Projects/AgnosticMC/Bin_CIFAR10/util.py
