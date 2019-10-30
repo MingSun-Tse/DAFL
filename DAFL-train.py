@@ -68,6 +68,7 @@ parser.add_argument('--uniform_target_dist', action="store_true")
 parser.add_argument('--temp', type=float, default=1)
 parser.add_argument('--n_G_update', type=int, default=1)
 parser.add_argument('--n_S_update', type=int, default=1)
+parser.add_argument('--base_acc', type=float, default=0.4)
 opt = parser.parse_args()
 if opt.dataset != "MNIST":
   opt.channels = 3
@@ -336,7 +337,7 @@ for epoch in range(opt.n_epochs):
             label_T = outputs_T.argmax(dim=1)
             
             # cos loss
-            update_coslw_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > 0.4)
+            update_coslw_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > opt.base_acc)
             embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
             x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
             y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
@@ -366,7 +367,7 @@ for epoch in range(opt.n_epochs):
                 # logprint(logtmp + "-- prob var per class (E%dS%d)" % (epoch, step))
             
             # ie loss
-            update_dist_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > 0.4)
+            update_dist_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > opt.base_acc)
             if opt.ie:
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
