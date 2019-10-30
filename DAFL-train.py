@@ -330,8 +330,8 @@ for epoch in range(opt.n_epochs):
           x = torch.cat([noise1, noise2], dim=0)
           
           # update G
-          n_G_update = opt.n_G_update
-          for gi in range(n_G_update):
+          gi = 0
+          while gi < opt.n_G_update:
             gen_imgs = generator(x)
             outputs_T, features_T = teacher(gen_imgs, out_feature=1)
             outputs_S = net(gen_imgs, out_feature=0)
@@ -400,14 +400,8 @@ for epoch in range(opt.n_epochs):
                 expect_dist = F.softmax(kl / opt.temp, dim=0)
               actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
               loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist)
-              if loss_information_entropy.item() > 1e-2: # normal: < 1e-3
-                logprint("some bad oscilating happens, extend the G's training time to stable the class ratio, gi = %d" % gi)
-                n_G_update = 20
-                ie_lw = 250 # large reg to strongly force the class ratio to be normal
-              else:
-                n_G_update = opt.n_G_update
-                ie_lw = opt.ie
-              loss_G += loss_information_entropy * ie_lw
+              
+              # print for check
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
                 for c in range(opt.num_class):
@@ -415,6 +409,17 @@ for epoch in range(opt.n_epochs):
                   logtmp2 += "%.4f  " % actual_dist[c]
                 logprint(logtmp1 + ("-- expected class ratio (E%dS%d) loss: %.4f" % (epoch, step, loss_information_entropy)))
                 logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
+                
+              # oscillation check
+              if loss_information_entropy.item() > 1e-2: # normal: < 1e-3
+                logprint("some bad oscillation happens, extend the G's training time to stable the class ratio, gi = %d" % gi)
+                ie_lw = 250 # large reg to strongly force the class ratio to be normal
+                gi -= 1 # the loop will not stop unless the class ratios are corrected
+              else:
+                ie_lw = opt.ie
+
+              loss_G += loss_information_entropy * ie_lw
+
             else:
               loss_information_entropy = torch.zeros(1)
             
@@ -423,6 +428,7 @@ for epoch in range(opt.n_epochs):
             for name, param in generator.named_parameters():
               if param.requires_grad:
                 param.data = ema_G(name, param.data)
+            gi += 1
           
           # update S
           for si in range(opt.n_S_update):
