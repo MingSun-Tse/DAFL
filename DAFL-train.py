@@ -69,6 +69,8 @@ parser.add_argument('--temp', type=float, default=1)
 parser.add_argument('--n_G_update', type=int, default=1)
 parser.add_argument('--n_S_update', type=int, default=1)
 parser.add_argument('--base_acc', type=float, default=0.4)
+parser.add_argument('--oscill_thre', type=float, default=5e-3)
+
 opt = parser.parse_args()
 if opt.dataset != "MNIST":
   opt.channels = 3
@@ -411,8 +413,8 @@ for epoch in range(opt.n_epochs):
                 logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
                 
               # oscillation check
-              if loss_information_entropy.item() > 8e-3: # normal: < 1e-3
-                logprint("some bad oscillation happens, extend the G's training time to stable the class ratio, gi = %d" % gi)
+              if loss_information_entropy.item() > opt.oscill_thre: # normal: < 1e-3
+                logprint("some bad oscillation happens, extend the G's training time to stable the class ratio, gi = %d (E%dS%d)" % (gi, epoch, step))
                 ie_lw = 250 # large reg to strongly force the class ratio to be normal
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
               else:
