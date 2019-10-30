@@ -66,6 +66,8 @@ parser.add_argument('--update_dist_interval', type=int, default=50)
 parser.add_argument('--momentum_cnt', type=float, default=0.9)
 parser.add_argument('--uniform_target_dist', action="store_true")
 parser.add_argument('--temp', type=float, default=1)
+parser.add_argument('--n_G_update', type=int, default=1)
+parser.add_argument('--n_S_update', type=int, default=1)
 opt = parser.parse_args()
 if opt.dataset == "cifar10":
   opt.channels = 3
@@ -249,10 +251,11 @@ opt.ExpID = ExpID
 opt.CodeID = get_CodeID()
 logprint(opt.__dict__)
 
-ema_G = EMA(0.9)
-for name, param in generator.named_parameters():
-  if param.requires_grad:
-    ema_G.register(name, param.data)
+if opt.mode == "ours":
+  ema_G = EMA(0.9)
+  for name, param in generator.named_parameters():
+    if param.requires_grad:
+      ema_G.register(name, param.data)
 
 # ----------
 #  Training
@@ -313,139 +316,120 @@ for epoch in range(opt.n_epochs):
             logprint(logtmp + ("-- real class ratio (E%dS%d)" % (epoch, step)))
           
         elif opt.mode == "ours":
-          # 2019/10/20: automatically adjust the target dist for better Student learning
-          update_dist_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > 0.4)
-          update_coslw_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > 0.4)
-          
-          # --- 2019/10/08: test my losses
           half_bs = int(opt.batch_size / 2)
           noise1 = torch.randn(half_bs, opt.latent_dim).cuda()
           noise2 = torch.randn(half_bs, opt.latent_dim).cuda()
-          noise_concat = torch.cat([noise1, noise2], dim=0)
-          one_hot = OneHotCategorical(sample_prob)
-          onehot_label = one_hot.sample([half_bs]).view([half_bs, opt.num_class]).cuda()
-          pseudo_label_concat = torch.cat([onehot_label, onehot_label], dim=0)
-          label = pseudo_label_concat.argmax(dim=1)
-          x = torch.cat([noise_concat, pseudo_label_concat], dim=1)
+          x = torch.cat([noise1, noise2], dim=0)
           
-          gen_imgs = generator(x)
-          outputs_T, features_T = teacher(gen_imgs, out_feature=1)
-          outputs_S = net(gen_imgs, out_feature=0)
-          label_T = outputs_T.argmax(dim=1) # 2019/10/18: for adv loss
-          
-          # analyze label_T
-          logtmp = ""
-          for c in range(opt.num_class):
-            tmp = sum(label_T.cpu().data.numpy() == c)
-            num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + tmp * (1-opt.momentum_cnt) if num_sample_per_class[c] else tmp
-            logtmp += "%.2f  " % (num_sample_per_class[c] / opt.batch_size)
-          if step % opt.update_dist_interval == (opt.update_dist_interval-1):
-            logprint(logtmp + ("-- real class ratio (E%dS%d)" % (epoch, step)))
-          
-          # cos loss
-          embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
-          x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
-          y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
-          loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() if opt.use_sign else y_cos / x_cos
-          lw_a = opt.a if update_coslw_cond else 0
-          loss_G = loss_activation * lw_a
-          
-          # one hot loss
-          if opt.oh:
-            loss_one_hot = criterion(outputs_T, label)
-            loss_G += loss_one_hot * opt.oh
-          else:
-            loss_one_hot = torch.zeros(1)
-          
-          # prob variance per class loss
-          if opt.lw_prob_var:
-            var = torch.var(F.softmax(outputs_T, dim=1), dim=0)
-            logtmp = ""
-            for c in range(opt.num_class):
-              history_prob_var[c] = history_prob_var[c] * opt.momentum_cnt + var[c] * (1-opt.momentum_cnt) \
-                  if history_prob_var[c] else var[c]
-              logtmp += "%.2f  " % history_prob_var[c].item()
-            loss_G += var.mean() * opt.lw_prob_var
-            if step % opt.update_dist_interval == 0:
-              logprint(logtmp + "-- prob var per class (E%dS%d)" % (epoch, step))
-          
-          # ie loss
-          if opt.ie:
-            if step % opt.update_dist_interval == 0:
-              logtmp1 = ""; logtmp2 = ""
-              for c in range(opt.num_class):
-                logtmp1 += "%.2f  " % history_acc_S[c]
-                logtmp2 += "%.2f  " % history_kld_S[c]
-              logprint(logtmp1 + ("-- train history_acc_S (E%dS%d)" % (epoch, step)))
-              # logprint(logtmp2 + "-- train kld loss")
-            '''
-              aa = np.zeros(opt.num_class)
-              for c in range(opt.num_class):
-                aa[c] = 1 / history_acc_S[c] if update_dist_cond else 0.1
-              aa = aa / aa.sum()
+          # update G
+          for gi in range(opt.n_G_update):
+            gen_imgs = generator(x)
+            outputs_T, features_T = teacher(gen_imgs, out_feature=1)
+            outputs_S = net(gen_imgs, out_feature=0)
+            label_T = outputs_T.argmax(dim=1)
+            
+            # cos loss
+            update_coslw_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > 0.4)
+            embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
+            x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
+            y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
+            if update_coslw_cond:
+              loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() if opt.use_sign else y_cos / x_cos
+            else:
+              loss_activation = torch.zeros(1)
+            loss_G = loss_activation * opt.a
+            
+            # one hot loss
+            if opt.oh:
+              loss_one_hot = criterion(outputs_T, label)
+              loss_G += loss_one_hot * opt.oh
+            else:
+              loss_one_hot = torch.zeros(1)
+            
+            # prob variance per class loss
+            if opt.lw_prob_var:
+              var = torch.var(F.softmax(outputs_T, dim=1), dim=0)
               logtmp = ""
               for c in range(opt.num_class):
-                logtmp += "%.2f  " % aa[c]
-              logprint(logtmp + ("-- expected class ratio (E%dS%d)" % (epoch, step)))
-            dist_expect = torch.from_numpy(np.array(aa)).float().cuda()
-            softmax_o_T = F.softmax(outputs_T, dim = 1).mean(dim = 0)
-            loss_information_entropy = F.kl_div(softmax_o_T.log(), dist_expect, reduction="sum") # my dist adjust loss
-            loss_G += loss_information_entropy * opt.ie
-            '''
+                history_prob_var[c] = history_prob_var[c] * opt.momentum_cnt + var[c] * (1-opt.momentum_cnt) \
+                    if history_prob_var[c] else var[c]
+                logtmp += "%.2f  " % history_prob_var[c].item()
+              loss_G += var.mean() * opt.lw_prob_var
+              # if step % opt.update_dist_interval == 0:
+                # logprint(logtmp + "-- prob var per class (E%dS%d)" % (epoch, step))
             
-            kl = F.kl_div(F.log_softmax(outputs_S, dim=1), F.softmax(outputs_T, dim=1), reduction="none")
-            kl = kl.mean(dim=0)
-            if opt.uniform_target_dist or (not update_dist_cond):
-              expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
+            # ie loss
+            update_dist_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > 0.4)
+            if opt.ie:
+              if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
+                logtmp1 = ""; logtmp2 = ""
+                for c in range(opt.num_class):
+                  logtmp1 += "%.2f  " % history_acc_S[c]
+                  logtmp2 += "%.2f  " % history_kld_S[c]
+                logprint(logtmp1 + "-- train history_acc_S (E%dS%d)" % (epoch, step))
+                logprint(logtmp2 + "-- train kld loss")
+              '''
+                aa = np.zeros(opt.num_class)
+                for c in range(opt.num_class):
+                  aa[c] = 1 / history_acc_S[c] if update_dist_cond else 0.1
+                aa = aa / aa.sum()
+                logtmp = ""
+                for c in range(opt.num_class):
+                  logtmp += "%.2f  " % aa[c]
+                logprint(logtmp + ("-- expected class ratio (E%dS%d)" % (epoch, step)))
+              dist_expect = torch.from_numpy(np.array(aa)).float().cuda()
+              softmax_o_T = F.softmax(outputs_T, dim = 1).mean(dim = 0)
+              loss_information_entropy = F.kl_div(softmax_o_T.log(), dist_expect, reduction="sum") # my dist adjust loss
+              loss_G += loss_information_entropy * opt.ie
+              '''
+              
+              kl = F.kl_div(F.log_softmax(outputs_S, dim=1), F.softmax(outputs_T, dim=1), reduction="none")
+              kl = kl.mean(dim=0)
+              if opt.uniform_target_dist or (not update_dist_cond):
+                expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
+              else:
+                expect_dist = F.softmax(kl / opt.temp, dim=0)
+              actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
+              loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist)
+              loss_G += loss_information_entropy * opt.ie
+              if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
+                logtmp1 = ""; logtmp2 = ""
+                for c in range(opt.num_class):
+                  logtmp1 += "%.4f  " % expect_dist[c]
+                  logtmp2 += "%.4f  " % actual_dist[c]
+                logprint(logtmp1 + ("-- expected class ratio (E%dS%d) loss: %.4f" % (epoch, step, loss_information_entropy)))
+                logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
             else:
-              expect_dist = F.softmax(kl / opt.temp, dim=0)
-            actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
-            loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist)
-            loss_G += loss_information_entropy * opt.ie
-            if step % opt.show_interval == 0:
-              logtmp1 = ""; logtmp2 = ""
-              for c in range(opt.num_class):
-                logtmp1 += "%.4f  " % expect_dist[c]
-                logtmp2 += "%.4f  " % actual_dist[c]
-              logprint(logtmp1 + ("-- expected class ratio (E%dS%d) loss: %.4f" % (epoch, step, loss_information_entropy)))
-              logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
-          else:
-            loss_information_entropy = torch.zeros(1)
-          
-          if opt.lw_norm:
-            loss_G += -features_T.abs().mean() * opt.lw_norm
-          
-          if opt.lw_adv:
-            outputs_S = net(gen_imgs)
-            loss_G += -criterion(outputs_S, label_T.detach()) * opt.lw_adv
-          
-          # 2019/10/21 EMA to avoid collpase
-          optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
-          for name, param in generator.named_parameters():
-            if param.requires_grad:
-              param.data = ema_G(name, param.data)
+              loss_information_entropy = torch.zeros(1)
+            
+            # 2019/10/21 EMA to avoid collpase
+            optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
+            for name, param in generator.named_parameters():
+              if param.requires_grad:
+                param.data = ema_G(name, param.data)
           
           # update S
-          outputs_S = net(gen_imgs.detach())
-          pred = outputs_S.max(1)[1]
-          if_right = pred.eq(label_T.view_as(pred))
-          trainacc = if_right.sum().item() / label_T.size(0)
-          
-          # get per-class status of the Student
-          acc = [0] * opt.num_class; cnt = [1] * opt.num_class; kld = [0] * opt.num_class
-          for oS, oT in zip(outputs_S, outputs_T):
-            lT = oT.argmax(); lS = oS.argmax()
-            acc[lT] += int(lT == lS)
-            cnt[lT] += 1
-            kld[lT] += F.kl_div(F.log_softmax(oS, dim=0), F.softmax(oT, dim=0)).item()
-          for c in range(opt.num_class):
-            current_acc = acc[c] * 1.0 / cnt[c]
-            current_kld = kld[c] * 1.0 / cnt[c]
-            history_acc_S[c] = history_acc_S[c] * opt.momentum_cnt + current_acc * (1-opt.momentum_cnt) if history_acc_S[c] else current_acc
-            history_kld_S[c] = history_kld_S[c] * opt.momentum_cnt + current_kld * (1-opt.momentum_cnt) if history_kld_S[c] else current_kld
-          
-          loss_kd = kdloss(outputs_S, outputs_T.detach())
-          optimizer_S.zero_grad(); loss_kd.backward(); optimizer_S.step()
+          for si in range(opt.n_S_update):
+            outputs_S = net(gen_imgs.detach())
+            pred = outputs_S.max(1)[1]
+            if_right = pred.eq(label_T.view_as(pred))
+            trainacc = if_right.sum().item() / label_T.size(0)
+            
+            # get per-class status of the Student
+            acc = [0] * opt.num_class; cnt = [1] * opt.num_class; kld = [0] * opt.num_class
+            for oS, oT in zip(outputs_S, outputs_T):
+              lT = oT.argmax(); lS = oS.argmax()
+              acc[lT] += int(lT == lS)
+              cnt[lT] += 1
+              kld[lT] += F.kl_div(F.log_softmax(oS, dim=0), F.softmax(oT, dim=0)).item()
+            for c in range(opt.num_class):
+              current_acc = acc[c] * 1.0 / cnt[c]
+              current_kld = kld[c] * 1.0 / cnt[c]
+              history_acc_S[c] = history_acc_S[c] * opt.momentum_cnt + current_acc * (1-opt.momentum_cnt) if history_acc_S[c] else current_acc
+              history_kld_S[c] = history_kld_S[c] * opt.momentum_cnt + current_kld * (1-opt.momentum_cnt) if history_kld_S[c] else current_kld
+            
+            loss_kd = kdloss(outputs_S, outputs_T.detach())
+            optimizer_S.zero_grad(); loss_kd.backward(); optimizer_S.step()
           
           # visualize
           if_right = torch.ones_like(label_T)
@@ -458,9 +442,11 @@ for epoch in range(opt.n_epochs):
               ax_train.set_ylim([-20, 200])
               fig_train.savefig(save_train_feat_path, dpi=400)
               fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
-          # ---
+          
+        else:
+          raise NotImplementedError
         
-        if step == 1:
+        if step == 0:
             logprint("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs, loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
         
         if step % opt.test_interval == 0:
