@@ -69,8 +69,12 @@ parser.add_argument('--temp', type=float, default=1)
 parser.add_argument('--n_G_update', type=int, default=1)
 parser.add_argument('--n_S_update', type=int, default=1)
 opt = parser.parse_args()
-if opt.dataset == "cifar10":
+if opt.dataset != "MNIST":
   opt.channels = 3
+if opt.dataset == "cifar100":
+  opt.num_class = 100
+if opt.dataset == "imagenet":
+  opt.num_class = 1000
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 
 cuda = True
@@ -164,7 +168,10 @@ class Generator(nn.Module):
 if opt.dataset == "cifar10":
   opt.data= "../20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR10"
   opt.teacher_dir = "CIFAR10_model/"
-
+if opt.dataset == "cifar100":
+  opt.data = "../20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR100"
+  opt.teacher_dir = "Experiments/SERVER218-20191022-094454_teacher-cifar100/weights/"
+  
 # set up model
 teacher = torch.load(opt.teacher_dir + '/teacher').cuda()
 teacher.eval()
