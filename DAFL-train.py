@@ -411,7 +411,7 @@ for epoch in range(opt.n_epochs):
                 logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
                 
               # oscillation check
-              if loss_information_entropy.item() > 1e-2: # normal: < 1e-3
+              if loss_information_entropy.item() > 8e-3: # normal: < 1e-3
                 logprint("some bad oscillation happens, extend the G's training time to stable the class ratio, gi = %d" % gi)
                 ie_lw = 250 # large reg to strongly force the class ratio to be normal
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
