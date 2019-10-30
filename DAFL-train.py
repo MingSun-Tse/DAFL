@@ -64,6 +64,8 @@ parser.add_argument('--show_interval', type=int, default=10)
 parser.add_argument('--save_interval', type=int, default=100)
 parser.add_argument('--update_dist_interval', type=int, default=50)
 parser.add_argument('--momentum_cnt', type=float, default=0.9)
+parser.add_argument('--uniform_target_dist', action="store_true")
+parser.add_argument('--temp', type=float, default=1)
 opt = parser.parse_args()
 if opt.dataset == "cifar10":
   opt.channels = 3
@@ -328,6 +330,7 @@ for epoch in range(opt.n_epochs):
           
           gen_imgs = generator(x)
           outputs_T, features_T = teacher(gen_imgs, out_feature=1)
+          outputs_S = net(gen_imgs, out_feature=0)
           label_T = outputs_T.argmax(dim=1) # 2019/10/18: for adv loss
           
           # analyze label_T
@@ -375,7 +378,7 @@ for epoch in range(opt.n_epochs):
                 logtmp2 += "%.2f  " % history_kld_S[c]
               logprint(logtmp1 + ("-- train history_acc_S (E%dS%d)" % (epoch, step)))
               # logprint(logtmp2 + "-- train kld loss")
-              
+            '''
               aa = np.zeros(opt.num_class)
               for c in range(opt.num_class):
                 aa[c] = 1 / history_acc_S[c] if update_dist_cond else 0.1
@@ -388,6 +391,24 @@ for epoch in range(opt.n_epochs):
             softmax_o_T = F.softmax(outputs_T, dim = 1).mean(dim = 0)
             loss_information_entropy = F.kl_div(softmax_o_T.log(), dist_expect, reduction="sum") # my dist adjust loss
             loss_G += loss_information_entropy * opt.ie
+            '''
+            
+            kl = F.kl_div(F.log_softmax(outputs_S, dim=1), F.softmax(outputs_T, dim=1), reduction="none")
+            kl = kl.mean(dim=0)
+            if opt.uniform_target_dist or (not update_dist_cond):
+              expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
+            else:
+              expect_dist = F.softmax(kl / opt.temp, dim=0)
+            actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
+            loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist)
+            loss_G += loss_information_entropy * opt.ie
+            if step % opt.show_interval == 0:
+              logtmp1 = ""; logtmp2 = ""
+              for c in range(opt.num_class):
+                logtmp1 += "%.4f  " % expect_dist[c]
+                logtmp2 += "%.4f  " % actual_dist[c]
+              logprint(logtmp1 + ("-- expected class ratio (E%dS%d) loss: %.4f" % (epoch, step, loss_information_entropy)))
+              logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
           else:
             loss_information_entropy = torch.zeros(1)
           
