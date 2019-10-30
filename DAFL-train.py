@@ -130,7 +130,7 @@ class Generator(nn.Module):
         if opt.mode == "original":
           self.l1 = nn.Sequential(nn.Linear(opt.latent_dim, 128*self.init_size**2))
         elif opt.mode == "ours":
-          self.l1 = nn.Sequential(nn.Linear(opt.latent_dim+10, 128*self.init_size**2)) # 2019/10/08, test my losses
+          self.l1 = nn.Sequential(nn.Linear(opt.latent_dim, 128*self.init_size**2))
         else:
           raise NotImplementedError
         self.conv_blocks0 = nn.Sequential(
@@ -311,7 +311,7 @@ for epoch in range(opt.n_epochs):
           for c in range(opt.num_class):
             tmp = sum(label_T.cpu().data.numpy() == c)
             num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + tmp * (1-opt.momentum_cnt) if num_sample_per_class[c] else tmp
-            logtmp += "%.2f  " % (num_sample_per_class[c] / opt.batch_size)
+            logtmp += "%.4f  " % (num_sample_per_class[c] / opt.batch_size)
           if step % opt.show_interval == 0:
             logprint(logtmp + ("-- real class ratio (E%dS%d)" % (epoch, step)))
           
@@ -336,7 +336,7 @@ for epoch in range(opt.n_epochs):
             if update_coslw_cond:
               loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() if opt.use_sign else y_cos / x_cos
             else:
-              loss_activation = torch.zeros(1)
+              loss_activation = torch.zeros(1).cuda()
             loss_G = loss_activation * opt.a
             
             # one hot loss
@@ -349,12 +349,12 @@ for epoch in range(opt.n_epochs):
             # prob variance per class loss
             if opt.lw_prob_var:
               var = torch.var(F.softmax(outputs_T, dim=1), dim=0)
+              loss_G += var.mean() * opt.lw_prob_var
               logtmp = ""
               for c in range(opt.num_class):
                 history_prob_var[c] = history_prob_var[c] * opt.momentum_cnt + var[c] * (1-opt.momentum_cnt) \
                     if history_prob_var[c] else var[c]
-                logtmp += "%.2f  " % history_prob_var[c].item()
-              loss_G += var.mean() * opt.lw_prob_var
+                logtmp += "%.4f  " % history_prob_var[c].item()
               # if step % opt.update_dist_interval == 0:
                 # logprint(logtmp + "-- prob var per class (E%dS%d)" % (epoch, step))
             
@@ -364,8 +364,8 @@ for epoch in range(opt.n_epochs):
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
                 for c in range(opt.num_class):
-                  logtmp1 += "%.2f  " % history_acc_S[c]
-                  logtmp2 += "%.2f  " % history_kld_S[c]
+                  logtmp1 += "%.4f  " % history_acc_S[c]
+                  logtmp2 += "%.4f  " % history_kld_S[c]
                 logprint(logtmp1 + "-- train history_acc_S (E%dS%d)" % (epoch, step))
                 logprint(logtmp2 + "-- train kld loss")
               '''
@@ -375,7 +375,7 @@ for epoch in range(opt.n_epochs):
                 aa = aa / aa.sum()
                 logtmp = ""
                 for c in range(opt.num_class):
-                  logtmp += "%.2f  " % aa[c]
+                  logtmp += "%.4f  " % aa[c]
                 logprint(logtmp + ("-- expected class ratio (E%dS%d)" % (epoch, step)))
               dist_expect = torch.from_numpy(np.array(aa)).float().cuda()
               softmax_o_T = F.softmax(outputs_T, dim = 1).mean(dim = 0)
@@ -391,7 +391,11 @@ for epoch in range(opt.n_epochs):
                 expect_dist = F.softmax(kl / opt.temp, dim=0)
               actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
               loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist)
-              loss_G += loss_information_entropy * opt.ie
+              if loss_information_entropy.item() > 5e-2: # normal: < 1e-3
+                ie_lw = 250 # to avoid serious class unbalance
+              else:
+                ie_lw = opt.ie
+              loss_G += loss_information_entropy * ie_lw
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
                 for c in range(opt.num_class):
@@ -471,7 +475,7 @@ for epoch in range(opt.n_epochs):
           logtmp = ""
           for c in range(opt.num_class):
             acc_test[c] /= float(cnt_test[c])
-            logtmp += "%.2f  " % acc_test[c]
+            logtmp += "%.4f  " % acc_test[c]
           logprint(logtmp + ("-- test acc per class (E%dS%d)" % (epoch, step)))
     
           avg_loss /= len(data_test)
