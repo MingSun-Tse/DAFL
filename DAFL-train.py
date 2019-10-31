@@ -333,6 +333,7 @@ for epoch in range(opt.n_epochs):
           
           # update G
           gi = 0
+          n_stuck_in_loop = {}
           while gi < opt.n_G_update:
             gen_imgs = generator(x)
             outputs_T, features_T = teacher(gen_imgs, out_feature=1)
@@ -382,7 +383,9 @@ for epoch in range(opt.n_epochs):
             
             # ie loss
             update_dist_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > opt.base_acc)
+            loss_information_entropy = torch.zeros(1)
             if opt.ie:
+              # print to check
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
                 for c in range(opt.num_class):
@@ -390,20 +393,7 @@ for epoch in range(opt.n_epochs):
                   logtmp2 += "%.4f  " % kld[c]
                 logprint(logtmp1 + "-- train history_acc_S (E%dS%d)" % (epoch, step))
                 logprint(logtmp2 + "-- train kld_T_S       (E%dS%d)" % (epoch, step))
-              '''
-                aa = np.zeros(opt.num_class)
-                for c in range(opt.num_class):
-                  aa[c] = 1 / history_acc_S[c] if update_dist_cond else 0.1
-                aa = aa / aa.sum()
-                logtmp = ""
-                for c in range(opt.num_class):
-                  logtmp += "%.4f  " % aa[c]
-                logprint(logtmp + ("-- expected class ratio (E%dS%d)" % (epoch, step)))
-              dist_expect = torch.from_numpy(np.array(aa)).float().cuda()
-              softmax_o_T = F.softmax(outputs_T, dim = 1).mean(dim = 0)
-              loss_information_entropy = F.kl_div(softmax_o_T.log(), dist_expect, reduction="sum") # my dist adjust loss
-              loss_G += loss_information_entropy * opt.ie
-              '''
+
               kl = F.kl_div(F.log_softmax(outputs_S, dim=1), F.softmax(outputs_T, dim=1), reduction="none")
               kl = kl.mean(dim=0)
               if opt.uniform_target_dist or (not update_dist_cond):
@@ -415,7 +405,7 @@ for epoch in range(opt.n_epochs):
               actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
               loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist)
               
-              # print for check
+              # print to check
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
                 for c in range(opt.num_class):
@@ -426,16 +416,21 @@ for epoch in range(opt.n_epochs):
                 
               # oscillation check
               if loss_information_entropy.item() > opt.oscill_thre: # normal: < 1e-3
-                logprint("some bad oscillation happens, extend the G's training time to stable the class ratio, gi = %d (E%dS%d)" % (gi, epoch, step))
+                current_step = str(epoch * opt.num_iter_per_epoch + step)
+                if current_step in n_stuck_in_loop:
+                  n_stuck_in_loop[current_step] += 1
+                else:
+                  n_stuck_in_loop[current_step] = 1
+                if n_stuck_in_loop[current_step] > 30:
+                  logprint("cannot escape from this bad oscillation, stop trying, just skip it")
+                  break
+                logprint("some bad oscillation happens, extend the G's training time to stable the class ratio (E%dS%d gi=%d) #%d" % 
+                    (epoch, step, gi, n_stuck_in_loop[current_step]))
                 ie_lw = 250 # large reg to strongly force the class ratio to be normal
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
               else:
                 ie_lw = opt.ie
-
               loss_G += loss_information_entropy * ie_lw
-
-            else:
-              loss_information_entropy = torch.zeros(1)
             
             # 2019/10/21 EMA to avoid collpase
             optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
@@ -446,8 +441,7 @@ for epoch in range(opt.n_epochs):
           
           # update S
           for si in range(opt.n_S_update):
-            if opt.n_S_update != 1:
-              outputs_S = net(gen_imgs.detach())
+            outputs_S = net(gen_imgs.detach())
             pred = outputs_S.max(1)[1]
             if_right = pred.eq(label_T.view_as(pred))
             loss_kd = kdloss(outputs_S, outputs_T.detach())
