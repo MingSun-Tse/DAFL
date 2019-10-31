@@ -421,7 +421,7 @@ for epoch in range(opt.n_epochs):
                   n_stuck_in_loop[current_step] += 1
                 else:
                   n_stuck_in_loop[current_step] = 1
-                if n_stuck_in_loop[current_step] > 1:
+                if n_stuck_in_loop[current_step] > 30:
                   logprint("cannot escape from this bad oscillation, stop trying, just skip it")
                   loss_G.backward() # to clear gradients
                   break
