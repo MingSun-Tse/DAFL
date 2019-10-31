@@ -446,10 +446,10 @@ for epoch in range(opt.n_epochs):
           
           # update S
           for si in range(opt.n_S_update):
-            outputs_S = net(gen_imgs.detach())
+            if opt.n_S_update != 1:
+              outputs_S = net(gen_imgs.detach())
             pred = outputs_S.max(1)[1]
             if_right = pred.eq(label_T.view_as(pred))
-            trainacc = if_right.sum().item() / label_T.size(0)
             loss_kd = kdloss(outputs_S, outputs_T.detach())
             optimizer_S.zero_grad(); loss_kd.backward(); optimizer_S.step()
           
