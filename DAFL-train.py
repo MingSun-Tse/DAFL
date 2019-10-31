@@ -354,7 +354,7 @@ for epoch in range(opt.n_epochs):
               history_kld_S[c] = history_kld_S[c] * opt.momentum_cnt + current_kld * (1-opt.momentum_cnt) if history_kld_S[c] else current_kld
               
             # cos loss
-            update_coslw_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > opt.base_acc)
+            update_coslw_cond = np.mean(history_acc_S) > opt.base_acc
             embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
             x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
             y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
@@ -382,7 +382,7 @@ for epoch in range(opt.n_epochs):
                 logtmp += "%.4f  " % history_prob_var[c].item()
             
             # ie loss
-            update_dist_cond = (0 not in history_acc_S) and (np.mean(history_acc_S) > opt.base_acc)
+            update_dist_cond = np.mean(history_acc_S) > opt.base_acc
             loss_information_entropy = torch.zeros(1)
             if opt.ie:
               # print to check
