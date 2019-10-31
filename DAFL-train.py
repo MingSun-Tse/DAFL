@@ -407,6 +407,7 @@ for epoch in range(opt.n_epochs):
               kl = kl.mean(dim=0)
               if opt.uniform_target_dist or (not update_dist_cond):
                 expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
+                temp = 0
               else:
                 temp = (kl.max() - kl.min()) / math.log(3) # 3 is a hyper-param
                 expect_dist = F.softmax(kl / temp, dim=0)
