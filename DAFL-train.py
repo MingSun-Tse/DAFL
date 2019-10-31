@@ -393,7 +393,8 @@ for epoch in range(opt.n_epochs):
                   logtmp2 += "%.4f  " % kld[c]
                 logprint(logtmp1 + "-- train history_acc_S (E%dS%d)" % (epoch, step))
                 logprint(logtmp2 + "-- train kld_T_S       (E%dS%d)" % (epoch, step))
-
+              '''
+              # scheme 1: use kld to adjust class ratio
               kl = F.kl_div(F.log_softmax(outputs_S, dim=1), F.softmax(outputs_T, dim=1), reduction="none")
               kl = kl.mean(dim=0)
               if opt.uniform_target_dist or (not update_dist_cond):
@@ -404,6 +405,17 @@ for epoch in range(opt.n_epochs):
                 expect_dist = F.softmax(kl / temp, dim=0)
               actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
               loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist)
+              '''
+              # scheme 2: use history acc of Student to adjust class ratio
+              actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
+              if step % opt.update_dist_interval == 0:
+                if opt.uniform_target_dist or (not update_dist_cond):
+                  expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
+                  temp = 0
+                else:
+                  temp = (max(history_acc_S) - min(history_acc_S)) / math.log(opt.multiplier)
+                  expect_dist = F.softmax(torch.from_numpy(np.array(history_acc_S)) / temp, dim=0)
+               loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist.detach())
               
               # print to check
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
@@ -413,7 +425,7 @@ for epoch in range(opt.n_epochs):
                   logtmp2 += "%.4f  " % actual_dist[c]
                 logprint(logtmp1 + ("-- expected class ratio (E%dS%d) loss: %.4f temp: %.4f" % (epoch, step, loss_information_entropy, temp)))
                 logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
-                
+              
               # oscillation check
               if loss_information_entropy.item() > opt.oscill_thre: # normal: < 1e-3
                 current_step = str(epoch * opt.num_iter_per_epoch + step)
