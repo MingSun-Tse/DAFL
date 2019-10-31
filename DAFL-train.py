@@ -62,14 +62,15 @@ parser.add_argument('--adjust_sampler', action="store_true")
 parser.add_argument('--test_interval', type=int, default=120)
 parser.add_argument('--show_interval', type=int, default=10)
 parser.add_argument('--save_interval', type=int, default=100)
-parser.add_argument('--update_dist_interval', type=int, default=50)
+parser.add_argument('--update_dist_interval', type=int, default=60)
 parser.add_argument('--momentum_cnt', type=float, default=0.9)
 parser.add_argument('--uniform_target_dist', action="store_true")
 parser.add_argument('--n_G_update', type=int, default=1)
 parser.add_argument('--n_S_update', type=int, default=1)
 parser.add_argument('--base_acc', type=float, default=0.4)
-parser.add_argument('--oscill_thre', type=float, default=5e-3)
-parser.add_argument('--multiplier', type=float, default=2.5)
+parser.add_argument('--oscill_thre', type=float, default=8e-3)
+parser.add_argument('--multiplier', type=float, default=2)
+parser.add_argument('--n_try', type=int, default=5)
 
 opt = parser.parse_args()
 if opt.dataset != "MNIST":
@@ -391,8 +392,8 @@ for epoch in range(opt.n_epochs):
                 for c in range(opt.num_class):
                   logtmp1 += "%.4f  " % history_acc_S[c]
                   logtmp2 += "%.4f  " % kld[c]
-                logprint(logtmp1 + "-- train history_acc_S (E%dS%d)" % (epoch, step))
-                logprint(logtmp2 + "-- train kld_T_S       (E%dS%d)" % (epoch, step))
+                logprint(logtmp1 + "-- train history_acc_S (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_acc_S)))
+                logprint(logtmp2 + "-- train kld_T_S       (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_kld_S)))
               '''
               # scheme 1: use kld to adjust class ratio
               kl = F.kl_div(F.log_softmax(outputs_S, dim=1), F.softmax(outputs_T, dim=1), reduction="none")
@@ -414,8 +415,8 @@ for epoch in range(opt.n_epochs):
                   temp = 0
                 else:
                   temp = (max(history_acc_S) - min(history_acc_S)) / math.log(opt.multiplier)
-                  expect_dist = F.softmax(torch.from_numpy(np.array(history_acc_S)) / temp, dim=0)
-               loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist.detach())
+                  expect_dist = F.softmax(-torch.from_numpy(np.array(history_acc_S)) / temp, dim=0).cuda().float()
+              loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist.detach())
               
               # print to check
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
@@ -427,13 +428,15 @@ for epoch in range(opt.n_epochs):
                 logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
               
               # oscillation check
-              if loss_information_entropy.item() > opt.oscill_thre: # normal: < 1e-3
+              ie_lw = opt.ie
+              if epoch > 1 and loss_information_entropy.item() > opt.oscill_thre:
+              # the first epoch does not check oscillation because it is normal to oscillate at the beginning
                 current_step = str(epoch * opt.num_iter_per_epoch + step)
                 if current_step in n_stuck_in_loop:
                   n_stuck_in_loop[current_step] += 1
                 else:
                   n_stuck_in_loop[current_step] = 1
-                if n_stuck_in_loop[current_step] > 10:
+                if n_stuck_in_loop[current_step] > opt.n_try:
                   logprint("cannot escape from this bad oscillation, stop trying, just skip it")
                   loss_G.backward() # to clear gradients
                   break
@@ -441,8 +444,6 @@ for epoch in range(opt.n_epochs):
                     (epoch, step, gi, n_stuck_in_loop[current_step]))
                 ie_lw = 100 # large reg to strongly force the class ratio to be normal
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
-              else:
-                ie_lw = opt.ie
               loss_G += loss_information_entropy * ie_lw
             
             # 2019/10/21 EMA to avoid collpase
