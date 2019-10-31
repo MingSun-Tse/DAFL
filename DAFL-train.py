@@ -421,13 +421,13 @@ for epoch in range(opt.n_epochs):
                   n_stuck_in_loop[current_step] += 1
                 else:
                   n_stuck_in_loop[current_step] = 1
-                if n_stuck_in_loop[current_step] > 30:
+                if n_stuck_in_loop[current_step] > 10:
                   logprint("cannot escape from this bad oscillation, stop trying, just skip it")
                   loss_G.backward() # to clear gradients
                   break
                 logprint("some bad oscillation happens, extend the G's training time to stable the class ratio (E%dS%d gi=%d) #%d" % 
                     (epoch, step, gi, n_stuck_in_loop[current_step]))
-                ie_lw = 250 # large reg to strongly force the class ratio to be normal
+                ie_lw = 100 # large reg to strongly force the class ratio to be normal
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
               else:
                 ie_lw = opt.ie
