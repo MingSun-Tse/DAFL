@@ -69,6 +69,7 @@ parser.add_argument('--n_G_update', type=int, default=1)
 parser.add_argument('--n_S_update', type=int, default=1)
 parser.add_argument('--base_acc', type=float, default=0.4)
 parser.add_argument('--oscill_thre', type=float, default=5e-3)
+parser.add_argument('--multiplier', type=float, default=2.5)
 
 opt = parser.parse_args()
 if opt.dataset != "MNIST":
@@ -409,7 +410,7 @@ for epoch in range(opt.n_epochs):
                 expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
                 temp = 0
               else:
-                temp = (kl.max() - kl.min()) / math.log(3) # 3 is a hyper-param
+                temp = (kl.max() - kl.min()) / math.log(opt.multiplier)
                 expect_dist = F.softmax(kl / temp, dim=0)
               actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
               loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist)
