@@ -432,7 +432,7 @@ for epoch in range(opt.n_epochs):
               x_cos = F.cosine_similarity(noise_1, noise_2)
               y_cos = F.cosine_similarity(embed_1, embed_2)
               sign = (label_T[:half_bs] == label_T[half_bs:]).detach().float()
-              loss_activation = y_cos / torch.abs(x_cos) * sign
+              loss_activation = y_cos / torch.abs(x_cos) * sign if opt.use_sign else y_cos / x_cos * sign
               loss_activation = loss_activation.sum()
               loss_activation /= sign.sum()
             else:
