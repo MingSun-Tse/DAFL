@@ -294,7 +294,7 @@ for epoch in range(opt.n_epochs):
           gen_imgs = generator(z)
           outputs_T, features_T = teacher(gen_imgs, out_feature=True)
           
-          # --- 2019/10/12: visualize
+          # -2019/10/12: visualize
           label = outputs_T.argmax(dim=1); if_right = torch.ones_like(label)
           if opt.plot_train_feat and step % 10 == 0:
             feat = embed_net.forward_2neurons(gen_imgs)
@@ -326,33 +326,23 @@ for epoch in range(opt.n_epochs):
             num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + tmp * (1-opt.momentum_cnt) if num_sample_per_class[c] else tmp
             logtmp += "%.4f  " % (num_sample_per_class[c] / opt.batch_size)
           if step % opt.show_interval == 0:
-            logprint(logtmp + ("-- real class ratio (E%dS%d)" % (epoch, step)))
+            logprint(logtmp + ("real class ratio (E%dS%d)" % (epoch, step)))
           
         elif opt.mode == "ours":
           half_bs = int(opt.batch_size / 2)
-          noise1 = torch.randn(half_bs, opt.latent_dim).cuda()
-          noise2 = torch.randn(half_bs, opt.latent_dim).cuda()
-          x = torch.cat([noise1, noise2], dim=0)
+          noise_1 = torch.randn(half_bs, opt.latent_dim).cuda()
+          noise_2 = torch.randn(half_bs, opt.latent_dim).cuda()
+          x = torch.cat([noise_1, noise_2], dim=0)
           
           # update G
           gi = 0
           n_stuck_in_loop = {}
           while gi < opt.n_G_update:
+            loss_G = torch.zeros(1).cuda()
             gen_imgs = generator(x)
             outputs_T, features_T = teacher(gen_imgs, out_feature=1)
             label_T = outputs_T.argmax(dim=1)
 
-            # cos loss
-            update_coslw_cond = np.mean(history_acc_S) > opt.base_acc
-            embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
-            x_cos = torch.mean(F.cosine_similarity(noise1, noise2))
-            y_cos = torch.mean(F.cosine_similarity(embed_1, embed_2))
-            if update_coslw_cond:
-              loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() if opt.use_sign else y_cos / x_cos
-            else:
-              loss_activation = torch.zeros(1).cuda()
-            loss_G = loss_activation * opt.a
-            
             # one hot loss
             if opt.oh:
               loss_one_hot = criterion(outputs_T, label)
@@ -380,8 +370,8 @@ for epoch in range(opt.n_epochs):
                 for c in range(opt.num_class):
                   logtmp1 += "%.4f  " % history_acc_S[c]
                   # logtmp2 += "%.4f  " % history_kld_S[c]
-                logprint(logtmp1 + "-- train history_acc_S (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_acc_S)))
-                # logprint(logtmp2 + "-- train kld_T_S       (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_kld_S)))
+                logprint(logtmp1 + "train history_acc_S (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_acc_S)))
+                # logprint(logtmp2 + "train kld_T_S       (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_kld_S)))
               '''
               # scheme 1: use kld to adjust class ratio
               kl = F.kl_div(F.log_softmax(outputs_S, dim=1), F.softmax(outputs_T, dim=1), reduction="none")
@@ -413,8 +403,8 @@ for epoch in range(opt.n_epochs):
                 for c in range(opt.num_class):
                   logtmp1 += "%.4f  " % expect_dist[c]
                   logtmp2 += "%.4f  " % actual_dist[c]
-                logprint(logtmp1 + ("-- expected class ratio (E%dS%d) ie: %.4f histie: %.4f temp: %.2f" % (epoch, step, loss_information_entropy, history_ie, temp)))
-                logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
+                logprint(logtmp1 + ("expected class ratio (E%dS%d) ie: %.4f histie: %.4f temp: %.2f" % (epoch, step, loss_information_entropy, history_ie, temp)))
+                logprint(logtmp2 + ("real     class ratio (E%dS%d)" % (epoch, step)))
               
               # oscillation check
               ie_lw = opt.ie
@@ -434,6 +424,22 @@ for epoch in range(opt.n_epochs):
                 ie_lw = opt.ie * 2
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
               loss_G += loss_information_entropy * ie_lw
+              
+            # cos loss
+            update_coslw_cond = np.mean(history_acc_S) > opt.base_acc
+            embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
+            x_cos = F.cosine_similarity(noise_1, noise_2)
+            y_cos = F.cosine_similarity(embed_1, embed_2)
+            sign = (label_T[:half_bs] == label_T[half_bs:]).detach().float()
+            loss_activation = y_cos / torch.abs(x_cos) * sign
+            loss_activation = loss_activation.sum()
+            loss_activation /= sign.sum()
+            # if update_coslw_cond:
+              # loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() if opt.use_sign else y_cos / x_cos
+            # else:
+              # loss_activation = torch.zeros(1).cuda()
+            loss_G += loss_activation * opt.a
+              
             
             # 2019/10/21 EMA to avoid collpase
             optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
@@ -478,7 +484,7 @@ for epoch in range(opt.n_epochs):
         else:
           raise NotImplementedError
         
-        if step == 0:
+        if step % opt.show_interval == 0:
             logprint("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs, loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
         
         if step % opt.test_interval == 0:
@@ -504,7 +510,7 @@ for epoch in range(opt.n_epochs):
           for c in range(opt.num_class):
             acc_test[c] /= float(cnt_test[c])
             logtmp += "%.4f  " % acc_test[c]
-          logprint(logtmp + ("-- test acc per class (E%dS%d)" % (epoch, step)))
+          logprint(logtmp + ("test acc per class (E%dS%d)" % (epoch, step)))
     
           avg_loss /= len(data_test)
           logprint("=" * (int(ExpID[-1])+1) + '> E%dS%d: Test Avg. Loss: %f, Accuracy: %f' % (epoch, step, avg_loss.data.item(), 
