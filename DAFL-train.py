@@ -70,6 +70,7 @@ parser.add_argument('--n_S_update', type=int, default=1)
 parser.add_argument('--base_acc', type=float, default=0.4)
 parser.add_argument('--oscill_thre', type=float, default=1e-2)
 parser.add_argument('--multiplier', type=float, default=2)
+parser.add_argument('--force_reg', type=float, default=20)
 parser.add_argument('--n_try', type=int, default=10)
 
 opt = parser.parse_args()
@@ -442,7 +443,7 @@ for epoch in range(opt.n_epochs):
                   break
                 logprint("some bad oscillation happens, extend the G's training time to stable the class ratio (E%dS%d gi=%d) #%d" % 
                     (epoch, step, gi, n_stuck_in_loop[current_step]))
-                ie_lw = 100 # large reg to strongly force the class ratio to be normal
+                ie_lw = opt.force_reg # large reg to strongly force the class ratio to be normal
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
               loss_G += loss_information_entropy * ie_lw
             
