@@ -427,17 +427,16 @@ for epoch in range(opt.n_epochs):
               
             # cos loss
             update_coslw_cond = np.mean(history_acc_S) > opt.base_acc
-            embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
-            x_cos = F.cosine_similarity(noise_1, noise_2)
-            y_cos = F.cosine_similarity(embed_1, embed_2)
-            sign = (label_T[:half_bs] == label_T[half_bs:]).detach().float()
-            loss_activation = y_cos / torch.abs(x_cos) * sign
-            loss_activation = loss_activation.sum()
-            loss_activation /= sign.sum()
-            # if update_coslw_cond:
-              # loss_activation = y_cos / x_cos * torch.sign(x_cos).detach() if opt.use_sign else y_cos / x_cos
-            # else:
-              # loss_activation = torch.zeros(1).cuda()
+            if update_coslw_cond:
+              embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
+              x_cos = F.cosine_similarity(noise_1, noise_2)
+              y_cos = F.cosine_similarity(embed_1, embed_2)
+              sign = (label_T[:half_bs] == label_T[half_bs:]).detach().float()
+              loss_activation = y_cos / torch.abs(x_cos) * sign
+              loss_activation = loss_activation.sum()
+              loss_activation /= sign.sum()
+            else:
+              loss_activation = torch.zeros(1).cuda()
             loss_G += loss_activation * opt.a
               
             
