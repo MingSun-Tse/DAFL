@@ -70,7 +70,7 @@ parser.add_argument('--n_S_update', type=int, default=1)
 parser.add_argument('--base_acc', type=float, default=0.4)
 parser.add_argument('--oscill_thre', type=float, default=1e-2)
 parser.add_argument('--multiplier', type=float, default=2)
-parser.add_argument('--n_try', type=int, default=10)
+parser.add_argument('--n_try', type=int, default=5)
 
 opt = parser.parse_args()
 if opt.dataset != "MNIST":
@@ -339,22 +339,8 @@ for epoch in range(opt.n_epochs):
           while gi < opt.n_G_update:
             gen_imgs = generator(x)
             outputs_T, features_T = teacher(gen_imgs, out_feature=1)
-            outputs_S = net(gen_imgs, out_feature=0)
             label_T = outputs_T.argmax(dim=1)
 
-            # get per-class status of the Student
-            acc = [0] * opt.num_class; cnt = [1] * opt.num_class; kld = [0] * opt.num_class
-            for oS, oT in zip(outputs_S, outputs_T):
-              lT = oT.argmax(); lS = oS.argmax()
-              acc[lT] += int(lT == lS)
-              cnt[lT] += 1
-              kld[lT] += F.kl_div(F.log_softmax(oS, dim=0), F.softmax(oT, dim=0)).item()
-            for c in range(opt.num_class):
-              current_acc = acc[c] * 1.0 / cnt[c]
-              current_kld = kld[c] * 1.0 / cnt[c]
-              history_acc_S[c] = history_acc_S[c] * opt.momentum_cnt + current_acc * (1-opt.momentum_cnt) if history_acc_S[c] else current_acc
-              history_kld_S[c] = history_kld_S[c] * opt.momentum_cnt + current_kld * (1-opt.momentum_cnt) if history_kld_S[c] else current_kld
-              
             # cos loss
             update_coslw_cond = np.mean(history_acc_S) > opt.base_acc
             embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
@@ -377,11 +363,11 @@ for epoch in range(opt.n_epochs):
             if opt.lw_prob_var:
               var = torch.var(F.softmax(outputs_T, dim=1), dim=0)
               loss_G += var.mean() * opt.lw_prob_var
-              logtmp = ""
-              for c in range(opt.num_class):
-                history_prob_var[c] = history_prob_var[c] * opt.momentum_cnt + var[c] * (1-opt.momentum_cnt) \
-                    if history_prob_var[c] else var[c]
-                logtmp += "%.4f  " % history_prob_var[c].item()
+              # logtmp = ""
+              # for c in range(opt.num_class):
+                # history_prob_var[c] = history_prob_var[c] * opt.momentum_cnt + var[c] * (1-opt.momentum_cnt) \
+                    # if history_prob_var[c] else var[c]
+                # logtmp += "%.4f  " % history_prob_var[c].item()
             
             # ie loss
             update_dist_cond = np.mean(history_acc_S) > opt.base_acc
@@ -392,9 +378,9 @@ for epoch in range(opt.n_epochs):
                 logtmp1 = ""; logtmp2 = ""
                 for c in range(opt.num_class):
                   logtmp1 += "%.4f  " % history_acc_S[c]
-                  logtmp2 += "%.4f  " % kld[c]
+                  # logtmp2 += "%.4f  " % history_kld_S[c]
                 logprint(logtmp1 + "-- train history_acc_S (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_acc_S)))
-                logprint(logtmp2 + "-- train kld_T_S       (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_kld_S)))
+                # logprint(logtmp2 + "-- train kld_T_S       (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_kld_S)))
               '''
               # scheme 1: use kld to adjust class ratio
               kl = F.kl_div(F.log_softmax(outputs_S, dim=1), F.softmax(outputs_T, dim=1), reduction="none")
@@ -426,7 +412,7 @@ for epoch in range(opt.n_epochs):
                 for c in range(opt.num_class):
                   logtmp1 += "%.4f  " % expect_dist[c]
                   logtmp2 += "%.4f  " % actual_dist[c]
-                logprint(logtmp1 + ("-- expected class ratio (E%dS%d) ie: %.4f (hist-ie: %.4f) temp: %.2f" % (epoch, step, loss_information_entropy, history_ie, temp)))
+                logprint(logtmp1 + ("-- expected class ratio (E%dS%d) ie: %.4f histie: %.4f temp: %.2f" % (epoch, step, loss_information_entropy, history_ie, temp)))
                 logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
               
               # oscillation check
@@ -462,6 +448,19 @@ for epoch in range(opt.n_epochs):
             if_right = pred.eq(label_T.view_as(pred))
             loss_kd = kdloss(outputs_S, outputs_T.detach())
             optimizer_S.zero_grad(); loss_kd.backward(); optimizer_S.step()
+          
+            # get per-class status of the Student
+            acc = [0] * opt.num_class; cnt = [1] * opt.num_class; kld = [0] * opt.num_class
+            for oS, oT in zip(outputs_S, outputs_T):
+              lT = oT.argmax(); lS = oS.argmax()
+              acc[lT] += int(lT == lS)
+              cnt[lT] += 1
+              kld[lT] += F.kl_div(F.log_softmax(oS, dim=0), F.softmax(oT, dim=0)).item()
+            for c in range(opt.num_class):
+              current_acc = acc[c] * 1.0 / cnt[c]
+              current_kld = kld[c] * 1.0 / cnt[c]
+              history_acc_S[c] = history_acc_S[c] * opt.momentum_cnt + current_acc * (1-opt.momentum_cnt) if history_acc_S[c] else current_acc
+              history_kld_S[c] = history_kld_S[c] * opt.momentum_cnt + current_kld * (1-opt.momentum_cnt) if history_kld_S[c] else current_kld
           
           # visualize
           if_right = torch.ones_like(label_T)
