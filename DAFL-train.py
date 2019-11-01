@@ -277,6 +277,7 @@ num_sample_per_class = [0] * opt.num_class
 history_acc_S = [0] * opt.num_class
 history_kld_S = [0] * opt.num_class
 history_prob_var = [0] * opt.num_class
+history_ie = 0
 for epoch in range(opt.n_epochs):
     # total_correct = 0
     # avg_loss = 0.0
@@ -417,6 +418,7 @@ for epoch in range(opt.n_epochs):
                   temp = (max(history_acc_S) - min(history_acc_S)) / math.log(opt.multiplier)
                   expect_dist = F.softmax(-torch.from_numpy(np.array(history_acc_S)) / temp, dim=0).cuda().float()
               loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist.detach())
+              history_ie = opt.momentum_cnt * history_ie + (1-opt.momentum_cnt) * loss_information_entropy.item()
               
               # print to check
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
@@ -424,12 +426,12 @@ for epoch in range(opt.n_epochs):
                 for c in range(opt.num_class):
                   logtmp1 += "%.4f  " % expect_dist[c]
                   logtmp2 += "%.4f  " % actual_dist[c]
-                logprint(logtmp1 + ("-- expected class ratio (E%dS%d) loss: %.4f temp: %.4f" % (epoch, step, loss_information_entropy, temp)))
+                logprint(logtmp1 + ("-- expected class ratio (E%dS%d) ie: %.4f (hist-ie: %.4f) temp: %.2f" % (epoch, step, loss_information_entropy, history_ie, temp)))
                 logprint(logtmp2 + ("-- real     class ratio (E%dS%d)" % (epoch, step)))
               
               # oscillation check
               ie_lw = opt.ie
-              if epoch > 1 and step % (opt.update_dist_interval-1) == 0 and loss_information_entropy > opt.oscill_thre:
+              if epoch > 1 and history_ie > opt.oscill_thre:
               # the first epoch does not check oscillation because it is normal to oscillate at the beginning
                 current_step = str(epoch * opt.num_iter_per_epoch + step)
                 if current_step in n_stuck_in_loop:
@@ -442,7 +444,7 @@ for epoch in range(opt.n_epochs):
                   break
                 logprint("some bad oscillation happens, extend the G's training time to stable the class ratio (E%dS%d gi=%d) #%d" % 
                     (epoch, step, gi, n_stuck_in_loop[current_step]))
-                ie_lw = opt.ie * 2 # large reg to strongly force the class ratio to be normal
+                ie_lw = opt.ie * 2
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
               loss_G += loss_information_entropy * ie_lw
             
