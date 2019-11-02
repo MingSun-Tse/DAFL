@@ -430,16 +430,15 @@ for epoch in range(opt.n_epochs):
               
             # cos loss
             update_coslw_cond = np.mean(history_acc_S) > opt.base_acc
-            if update_coslw_cond:
+            if opt.a and update_coslw_cond:
               embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
               x_cos = F.cosine_similarity(noise_1, noise_2)
               y_cos = F.cosine_similarity(embed_1, embed_2)
               loss_activation = y_cos / torch.abs(x_cos) if opt.use_sign else y_cos / x_cos
               loss_activation = loss_activation.mean()
+              loss_G += loss_activation * opt.a
             else:
               loss_activation = torch.zeros(1).cuda()
-            loss_G += loss_activation * opt.a
-            
             
             # 2019/10/21 EMA to avoid collpase
             optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
