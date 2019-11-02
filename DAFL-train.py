@@ -197,10 +197,9 @@ teacher = nn.DataParallel(teacher)
 generator = Generator().cuda()
 generator = nn.DataParallel(generator)
 
-T = 1
 def kdloss(y, teacher_scores):
     p = F.log_softmax(y, dim=1)
-    q = F.softmax(teacher_scores/T, dim=1)
+    q = F.softmax(teacher_scores, dim=1)
     l_kl = F.kl_div(p, q, size_average=False)  / y.shape[0]
     return l_kl
 
