@@ -397,7 +397,7 @@ for epoch in range(opt.n_epochs):
                 else:
                   temp = (max(history_acc_S) - min(history_acc_S)) / math.log(opt.multiplier)
                   expect_dist = F.softmax(-torch.from_numpy(np.array(history_acc_S)) / temp, dim=0).cuda().float()
-              loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist.detach()) * opt.num_class * math.log10(math.e)
+              loss_information_entropy = F.kl_div(expect_dist.log().detach(), actual_dist) * opt.num_class * math.log10(math.e)
               history_ie = opt.momentum_cnt * history_ie + (1-opt.momentum_cnt) * loss_information_entropy.item()
               
               # print to check
