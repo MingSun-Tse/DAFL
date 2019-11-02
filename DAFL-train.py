@@ -434,14 +434,12 @@ for epoch in range(opt.n_epochs):
               embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
               x_cos = F.cosine_similarity(noise_1, noise_2)
               y_cos = F.cosine_similarity(embed_1, embed_2)
-              sign = (label_T[:half_bs] == label_T[half_bs:]).detach().float()
-              loss_activation = y_cos / torch.abs(x_cos) * sign if opt.use_sign else y_cos / x_cos * sign
-              loss_activation = loss_activation.sum()
-              loss_activation /= sign.sum()
+              loss_activation = y_cos / torch.abs(x_cos) if opt.use_sign else y_cos / x_cos
+              loss_activation = loss_activation.mean()
             else:
               loss_activation = torch.zeros(1).cuda()
             loss_G += loss_activation * opt.a
-              
+            
             
             # 2019/10/21 EMA to avoid collpase
             optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
