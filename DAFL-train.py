@@ -313,7 +313,7 @@ for epoch in range(opt.n_epochs):
           softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
           # loss_information_entropy1 = (softmax_o_T * torch.log(softmax_o_T)).sum()
           expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
-          loss_information_entropy = (F.kl_div(expect_dist.log(), softmax_o_T) * opt.num_class - math.log(opt.num_class)) * math.log10(math.e)
+          loss_information_entropy = F.kl_div(expect_dist.log(), softmax_o_T) * opt.num_class * math.log10(math.e)
           # print(loss_information_entropy1.item(), loss_information_entropy.item(), loss_information_entropy1.item()+math.log(opt.num_class))
           loss = loss_one_hot * opt.oh + loss_information_entropy * opt.ie + loss_activation * opt.a
           loss_kd = kdloss(net(gen_imgs.detach()), outputs_T.detach()) 
