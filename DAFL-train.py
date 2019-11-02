@@ -197,9 +197,10 @@ teacher = nn.DataParallel(teacher)
 generator = Generator().cuda()
 generator = nn.DataParallel(generator)
 
+T = 1
 def kdloss(y, teacher_scores):
     p = F.log_softmax(y, dim=1)
-    q = F.softmax(teacher_scores, dim=1)
+    q = F.softmax(teacher_scores/T, dim=1)
     l_kl = F.kl_div(p, q, size_average=False)  / y.shape[0]
     return l_kl
 
@@ -309,7 +310,8 @@ for epoch in range(opt.n_epochs):
           
           pred = outputs_T.data.max(1)[1]
           loss_activation = -features_T.abs().mean()
-          loss_one_hot = criterion(outputs_T,pred)
+          loss_one_hot = criterion(outputs_T,pred) * 0
+          # loss_one_hot = torch.var(F.softmax(outputs_T, dim=1), dim=0).mean() * (100)
           softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
           # loss_information_entropy1 = (softmax_o_T * torch.log(softmax_o_T)).sum()
           expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
