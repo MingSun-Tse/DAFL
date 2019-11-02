@@ -71,9 +71,9 @@ parser.add_argument('--base_acc', type=float, default=0.4)
 parser.add_argument('--oscill_thre', type=float, default=2e-2)
 parser.add_argument('--n_try', type=int, default=5)
 parser.add_argument('--multiplier', type=float, default=2)
-
-
 opt = parser.parse_args()
+opt.oscill_thre *= (math.log10(math.e) * opt.num_class)
+
 if opt.dataset != "MNIST":
   opt.channels = 3
 if opt.dataset == "cifar100":
@@ -397,7 +397,7 @@ for epoch in range(opt.n_epochs):
                 else:
                   temp = (max(history_acc_S) - min(history_acc_S)) / math.log(opt.multiplier)
                   expect_dist = F.softmax(-torch.from_numpy(np.array(history_acc_S)) / temp, dim=0).cuda().float()
-              loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist.detach())
+              loss_information_entropy = F.kl_div(actual_dist.log(), expect_dist.detach()) * opt.num_class * math.log10(math.e)
               history_ie = opt.momentum_cnt * history_ie + (1-opt.momentum_cnt) * loss_information_entropy.item()
               
               # print to check
