@@ -348,7 +348,7 @@ for epoch in range(opt.n_epochs):
 
             # one hot loss
             if opt.oh:
-              loss_one_hot = criterion(outputs_T, label)
+              loss_one_hot = criterion(outputs_T, label_T)
               loss_G += loss_one_hot * opt.oh
             else:
               loss_one_hot = torch.zeros(1)
