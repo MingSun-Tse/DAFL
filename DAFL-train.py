@@ -68,7 +68,7 @@ parser.add_argument('--uniform_target_dist', action="store_true")
 parser.add_argument('--n_G_update', type=int, default=1)
 parser.add_argument('--n_S_update', type=int, default=1)
 parser.add_argument('--base_acc', type=float, default=0.4)
-parser.add_argument('--oscill_thre', type=float, default=2e-2)
+parser.add_argument('--oscill_thre', type=float, default=1000) # deprecated. used to be 2e-2
 parser.add_argument('--n_try', type=int, default=5)
 parser.add_argument('--multiplier', type=float, default=2)
 opt = parser.parse_args()
