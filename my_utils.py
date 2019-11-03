@@ -14,7 +14,7 @@ class LogPrint():
     self.file = file
     self.ExpID = ExpID
   def __call__(self, some_str):
-    print(self.ExpID[-4:] + "-%s-" % os.getpid() + time.strftime("%Y/%m/%d-%H:%M:%S] ") + str(some_str), file=self.file, flush=True)
+    print(self.ExpID[-6:] + "-%s-" % os.getpid() + time.strftime("%Y/%m/%d-%H:%M:%S] ") + str(some_str), file=self.file, flush=True)
 
 def check_path(x):
   if x:
