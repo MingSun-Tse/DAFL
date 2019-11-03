@@ -74,6 +74,7 @@ parser.add_argument('--multiplier', type=float, default=2)
 parser.add_argument('--temp', type=float, default=0.2)
 parser.add_argument('--ema', type=float, default=0.9)
 parser.add_argument('--label_oh', action="store_true")
+parser.add_argument('--use_detach_for_my_oh', action="store_true")
 opt = parser.parse_args()
 opt.oscill_thre *= (math.log10(math.e) * opt.num_class)
 
@@ -373,7 +374,10 @@ for epoch in range(opt.n_epochs):
               else:
                 prob = F.softmax(outputs_T, dim=1)
                 enhanced_prob = F.softmax(outputs_T / opt.temp, dim=1)
-                loss_one_hot = F.kl_div(prob.log(), enhanced_prob.data) * opt.num_class
+                if opt.use_detach_for_my_oh:
+                  loss_one_hot = F.kl_div(prob.log(), enhanced_prob.data) * opt.num_class
+                else:
+                  loss_one_hot = F.kl_div(prob.log(), enhanced_prob) * opt.num_class
               loss_G += loss_one_hot * opt.oh
             else:
               loss_one_hot = torch.zeros(1)
