@@ -307,9 +307,23 @@ for epoch in range(opt.n_epochs):
               fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
           # ---
           
+          if step % opt.show_interval == 0:
+            prob = F.softmax(outputs_T, dim=1)
+            prob_var1 = torch.var(prob, dim=1)
+            prob_var0 = torch.var(prob, dim=0)
+            logtmp = ""
+            for c in np.arange(0, opt.num_class, 4):
+              logtmp += "%.3f " % prob_var0[c]
+            logtmp += "\n"
+            for b in np.arange(0, opt.batch_size, 32):
+              for c in np.arange(0, opt.num_class, 4):
+                logtmp += "%.3f " % prob[b,c]
+              logtmp += " var: %.5f \n" % prob_var1[b]
+            print(logtmp)
+            
           pred = outputs_T.data.max(1)[1]
           loss_activation = -features_T.abs().mean()
-          loss_one_hot = criterion(outputs_T,pred) * 0
+          loss_one_hot = criterion(outputs_T,pred)
           # loss_one_hot = torch.var(F.softmax(outputs_T, dim=1), dim=0).mean() * (100)
           softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
           # loss_information_entropy1 = (softmax_o_T * torch.log(softmax_o_T)).sum()
