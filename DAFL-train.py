@@ -367,10 +367,12 @@ for epoch in range(opt.n_epochs):
 
             # one hot loss
             if opt.oh:
-              # loss_one_hot = criterion(outputs_T, label_T)
-              prob = F.softmax(outputs_T, dim=1)
-              enhanced_prob = F.softmax(outputs_T / opt.temp, dim=1)
-              loss_one_hot = F.kl_div(prob.log(), enhanced_prob.data) * opt.num_class
+              if opt.label_oh:
+                loss_one_hot = criterion(outputs_T, label_T)
+              else:
+                prob = F.softmax(outputs_T, dim=1)
+                enhanced_prob = F.softmax(outputs_T / opt.temp, dim=1)
+                loss_one_hot = F.kl_div(prob.log(), enhanced_prob.data) * opt.num_class
               loss_G += loss_one_hot * opt.oh
             else:
               loss_one_hot = torch.zeros(1)
