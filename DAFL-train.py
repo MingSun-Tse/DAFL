@@ -71,6 +71,7 @@ parser.add_argument('--base_acc', type=float, default=0.4)
 parser.add_argument('--oscill_thre', type=float, default=1000) # deprecated. used to be 2e-2
 parser.add_argument('--n_try', type=int, default=5)
 parser.add_argument('--multiplier', type=float, default=2)
+parser.add_argument('--temp', type=float, default=0.2)
 opt = parser.parse_args()
 opt.oscill_thre *= (math.log10(math.e) * opt.num_class)
 
@@ -364,7 +365,7 @@ for epoch in range(opt.n_epochs):
             if opt.oh:
               # loss_one_hot = criterion(outputs_T, label_T)
               prob = F.softmax(outputs_T, dim=1)
-              enhanced_prob = F.softmax(outputs_T / 0.4, dim=1)
+              enhanced_prob = F.softmax(outputs_T / opt.temp, dim=1)
               loss_one_hot = F.kl_div(prob.log(), enhanced_prob) * opt.num_class
               loss_G += loss_one_hot * opt.oh
             else:
