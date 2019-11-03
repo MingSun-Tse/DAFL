@@ -312,11 +312,11 @@ for epoch in range(opt.n_epochs):
             prob_var1 = torch.var(prob, dim=1)
             prob_var0 = torch.var(prob, dim=0)
             logtmp = ""
-            for c in np.arange(0, opt.num_class, 4):
+            for c in np.arange(0, opt.num_class):
               logtmp += "%.3f " % prob_var0[c]
             logtmp += "\n"
             for b in np.arange(0, opt.batch_size, 32):
-              for c in np.arange(0, opt.num_class, 4):
+              for c in np.arange(0, opt.num_class):
                 logtmp += "%.3f " % prob[b,c]
               logtmp += " var: %.5f \n" % prob_var1[b]
             logprint("\n" + logtmp)
