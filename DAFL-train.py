@@ -324,7 +324,6 @@ for epoch in range(opt.n_epochs):
           pred = outputs_T.data.max(1)[1]
           loss_activation = -features_T.abs().mean()
           loss_one_hot = criterion(outputs_T,pred)
-          # loss_one_hot = torch.var(F.softmax(outputs_T, dim=1), dim=0).mean() * (100)
           softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
           # loss_information_entropy1 = (softmax_o_T * torch.log(softmax_o_T)).sum()
           expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
@@ -363,7 +362,10 @@ for epoch in range(opt.n_epochs):
 
             # one hot loss
             if opt.oh:
-              loss_one_hot = criterion(outputs_T, label_T)
+              # loss_one_hot = criterion(outputs_T, label_T)
+              prob = F.softmax(outputs_T, dim=1)
+              enhanced_prob = F.softmax(outputs_T / 0.4, dim=1)
+              loss_one_hot = F.kl_div(prob.log(), enhanced_prob) * opt.num_class
               loss_G += loss_one_hot * opt.oh
             else:
               loss_one_hot = torch.zeros(1)
