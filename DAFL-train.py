@@ -73,6 +73,7 @@ parser.add_argument('--n_try', type=int, default=5)
 parser.add_argument('--multiplier', type=float, default=2)
 parser.add_argument('--temp', type=float, default=0.2)
 parser.add_argument('--ema', type=float, default=0.9)
+parser.add_argument('--label_oh', action="store_true")
 opt = parser.parse_args()
 opt.oscill_thre *= (math.log10(math.e) * opt.num_class)
 
