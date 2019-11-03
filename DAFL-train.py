@@ -319,7 +319,7 @@ for epoch in range(opt.n_epochs):
               for c in np.arange(0, opt.num_class, 4):
                 logtmp += "%.3f " % prob[b,c]
               logtmp += " var: %.5f \n" % prob_var1[b]
-            print(logtmp)
+            logprint("\n" + logtmp)
             
           pred = outputs_T.data.max(1)[1]
           loss_activation = -features_T.abs().mean()
