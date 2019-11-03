@@ -72,6 +72,7 @@ parser.add_argument('--oscill_thre', type=float, default=1000) # deprecated. use
 parser.add_argument('--n_try', type=int, default=5)
 parser.add_argument('--multiplier', type=float, default=2)
 parser.add_argument('--temp', type=float, default=0.2)
+parser.add_argument('--ema', type=float, default=0.9)
 opt = parser.parse_args()
 opt.oscill_thre *= (math.log10(math.e) * opt.num_class)
 
@@ -265,7 +266,7 @@ opt.CodeID = get_CodeID()
 logprint(opt.__dict__)
 
 if opt.mode == "ours":
-  ema_G = EMA(0.9)
+  ema_G = EMA(opt.ema)
   for name, param in generator.named_parameters():
     if param.requires_grad:
       ema_G.register(name, param.data)
@@ -308,6 +309,8 @@ for epoch in range(opt.n_epochs):
               fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
           # ---
           
+          # check variance of prob
+          '''
           if step % opt.show_interval == 0:
             prob = F.softmax(outputs_T, dim=1)
             prob_var1 = torch.var(prob, dim=1)
@@ -321,10 +324,11 @@ for epoch in range(opt.n_epochs):
                 logtmp += "%.3f " % prob[b,c]
               logtmp += " var: %.5f \n" % prob_var1[b]
             logprint("\n" + logtmp)
-            
+          '''
+          
           pred = outputs_T.data.max(1)[1]
           loss_activation = -features_T.abs().mean()
-          loss_one_hot = criterion(outputs_T,pred)
+          loss_one_hot = criterion(outputs_T, pred)
           softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
           # loss_information_entropy1 = (softmax_o_T * torch.log(softmax_o_T)).sum()
           expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
@@ -358,15 +362,15 @@ for epoch in range(opt.n_epochs):
           while gi < opt.n_G_update:
             loss_G = torch.zeros(1).cuda()
             gen_imgs = generator(x)
-            outputs_T, features_T = teacher(gen_imgs, out_feature=1)
-            label_T = outputs_T.argmax(dim=1)
+            outputs_T, features_T = teacher(gen_imgs, out_feature=True)
+            label_T = outputs_T.argmax(dim=1).data
 
             # one hot loss
             if opt.oh:
               # loss_one_hot = criterion(outputs_T, label_T)
               prob = F.softmax(outputs_T, dim=1)
               enhanced_prob = F.softmax(outputs_T / opt.temp, dim=1)
-              loss_one_hot = F.kl_div(prob.log(), enhanced_prob) * opt.num_class
+              loss_one_hot = F.kl_div(prob.log(), enhanced_prob.data) * opt.num_class
               loss_G += loss_one_hot * opt.oh
             else:
               loss_one_hot = torch.zeros(1)
@@ -417,7 +421,6 @@ for epoch in range(opt.n_epochs):
                   expect_dist = F.softmax(-torch.from_numpy(np.array(history_acc_S)) / temp, dim=0).cuda().float()
               loss_information_entropy = F.kl_div(expect_dist.log().detach(), actual_dist) * opt.num_class * math.log10(math.e)
               history_ie = opt.momentum_cnt * history_ie + (1-opt.momentum_cnt) * loss_information_entropy.item()
-              
               # print to check
               if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
@@ -426,9 +429,9 @@ for epoch in range(opt.n_epochs):
                   logtmp2 += "%.4f  " % actual_dist[c]
                 logprint(logtmp1 + ("expected class ratio (E%dS%d) ie: %.4f histie: %.4f temp: %.2f" % (epoch, step, loss_information_entropy, history_ie, temp)))
                 logprint(logtmp2 + ("real     class ratio (E%dS%d)" % (epoch, step)))
-              
               # oscillation check
               ie_lw = opt.ie
+              '''
               if epoch > 1 and history_ie > opt.oscill_thre:
               # the first epoch does not check oscillation because it is normal to oscillate at the beginning
                 current_step = str(epoch * opt.num_iter_per_epoch + step)
@@ -444,6 +447,7 @@ for epoch in range(opt.n_epochs):
                     (epoch, step, gi, n_stuck_in_loop[current_step]))
                 ie_lw = opt.ie * 2
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
+              '''
               loss_G += loss_information_entropy * ie_lw
               
             # cos loss
@@ -502,7 +506,7 @@ for epoch in range(opt.n_epochs):
           raise NotImplementedError
         
         if step % opt.show_interval == 0:
-            logprint("[Epoch %d/%d] [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, opt.n_epochs, loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
+            logprint("E%dS%d/%d: [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, step, opt.n_epochs, loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
         
         if step % opt.test_interval == 0:
           total_correct = 0
