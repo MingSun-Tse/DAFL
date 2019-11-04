@@ -16,18 +16,22 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader 
 import argparse
 from my_utils import LogPrint, set_up_dir, get_CodeID
+from model import AlexNet
+from data_loader import CelebA
+import math
 
 parser = argparse.ArgumentParser(description='train-teacher-network')
 
 # Basic model parameters.
-parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
-parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
-parser.add_argument('--output_dir', type=str, default='/home4/wanghuan/Projects/DAFL/MNIST_teacher_model/')
+parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100',])
+parser.add_argument('--data', type=str)
+parser.add_argument('--output_dir', type=str)
 parser.add_argument('-p', '--project_name', type=str, default='')
 parser.add_argument('--resume', type=str, default='')
 parser.add_argument('--CodeID', type=str, default='')
 parser.add_argument('--debug', action="store_true")
 parser.add_argument('--which_net', type=str, default="")
+parser.add_argument('-b', '--batchsize', type=int)
 args = parser.parse_args()
 
 # set up log dirs
@@ -38,7 +42,7 @@ args.ExpID = ExpID
 args.CodeID = get_CodeID()
 logprint(args.__dict__)
 
-os.makedirs(args.output_dir, exist_ok=True)  
+os.makedirs(args.output_dir, exist_ok=True)
 
 acc = 0
 acc_best = 0
@@ -97,7 +101,6 @@ if args.dataset == 'cifar10':
     optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
 
 if args.dataset == 'cifar100':
-    
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -122,7 +125,6 @@ if args.dataset == 'cifar100':
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
 
-
 def adjust_learning_rate(optimizer, epoch):
     """For resnet, the lr starts from 0.1, and is divided by 10 at 80 and 120 epochs"""
     if epoch < 80:
@@ -140,20 +142,21 @@ def train(epoch):
     global cur_batch_win
     net.train()
     loss_list, batch_list = [], []
+    n_iter_per_epoch = math.ceil(len(data_train) / args.batchsize)
     for i, (images, labels) in enumerate(data_train_loader):
         images, labels = Variable(images).cuda(), Variable(labels).cuda()
  
         optimizer.zero_grad()
  
         output = net(images)
- 
+
         loss = criterion(output, labels)
  
         loss_list.append(loss.data.item())
         batch_list.append(i+1)
  
-        if i == 1:
-            logprint('Train - Epoch %d, Batch: %d, Loss: %f' % (epoch, i, loss.data.item()))
+        if i % 100 == 0:
+            logprint('Train - E%dS%d/%d, Loss: %f' % (epoch, i, n_iter_per_epoch, loss.data.item()))
  
         loss.backward()
         optimizer.step()
@@ -192,9 +195,9 @@ def main():
     for e in range(1, epoch):
         train_and_test(e)
     if args.which_net == "embed":
-      torch.save(net,args.output_dir + 'teacher_embed')
+      torch.save(net,args.output_dir + '/teacher_embed')
     else:
-      torch.save(net,args.output_dir + 'teacher')
+      torch.save(net,args.output_dir + '/teacher')
  
  
 if __name__ == '__main__':
