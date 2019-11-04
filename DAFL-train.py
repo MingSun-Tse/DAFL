@@ -75,6 +75,9 @@ parser.add_argument('--temp', type=float, default=0.2)
 parser.add_argument('--ema', type=float, default=0.9)
 parser.add_argument('--label_oh', action="store_true")
 parser.add_argument('--use_detach_for_my_oh', action="store_true")
+parser.add_argument('--decay_lr_epoch1', type=int, default=160)
+parser.add_argument('--decay_lr_epoch1', type=int, default=320)
+parser.add_argument('--decay_lr_epoch1', type=int, default=480)
 opt = parser.parse_args()
 opt.oscill_thre *= (math.log10(math.e) * opt.num_class)
 
@@ -248,11 +251,11 @@ if opt.dataset != 'MNIST':
     optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
 
 def adjust_learning_rate(optimizer, epoch, learning_rate):
-    if epoch < 160: # 0.4 * opt.n_epochs: # 800:
+    if epoch < opt.decay_lr_epoch1: 
         lr = learning_rate
-    elif epoch < 320: #0.8 * opt.n_epochs: # 1600:
+    elif epoch < opt.decay_lr_epoch2:
         lr = 0.1 * learning_rate
-    elif epoch < 480:
+    elif epoch < opt.decay_lr_epoch3:
         lr = 0.01 * learning_rate
     else:
         lr = 0.001 * learning_rate
