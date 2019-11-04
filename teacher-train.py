@@ -23,9 +23,8 @@ import math
 parser = argparse.ArgumentParser(description='train-teacher-network')
 
 # Basic model parameters.
-parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100', 'CelebA'])
+parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100',])
 parser.add_argument('--data', type=str)
-parser.add_argument('--CelebA_attr_file', type=str, default="../../Dataset/CelebA/Anno/list_attr_celeba_my.txt")
 parser.add_argument('--output_dir', type=str)
 parser.add_argument('-p', '--project_name', type=str, default='')
 parser.add_argument('--resume', type=str, default='')
@@ -34,9 +33,6 @@ parser.add_argument('--debug', action="store_true")
 parser.add_argument('--which_net', type=str, default="")
 parser.add_argument('-b', '--batchsize', type=int)
 args = parser.parse_args()
-if args.dataset == "CelebA":
-  args.data_CelebA_train = "../../Dataset/CelebA/Img/train/"
-  args.data_CelebA_test = "../../Dataset/CelebA/Img/test/"
 
 # set up log dirs
 TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(args.project_name, args.resume, args.debug)
@@ -129,26 +125,6 @@ if args.dataset == 'cifar100':
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
 
-if args.dataset == "CelebA":
-  transform_train = transforms.Compose([
-      transforms.RandomCrop(224, padding=4),
-      transforms.RandomHorizontalFlip(),
-      transforms.ToTensor(),
-      transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-  ])
-  transform_test = transforms.Compose([
-      transforms.ToTensor(),
-      transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-  ])
-  data_train = CelebA(args.data_CelebA_train, args.CelebA_attr_file, transform=transform_train)
-  data_test = CelebA(args.data_CelebA_test, args.CelebA_attr_file, transform=transform_test)
-  data_train_loader = DataLoader(data_train, batch_size=args.batchsize, shuffle=True, num_workers=0)
-  data_test_loader = DataLoader(data_test, batch_size=args.batchsize, num_workers=0)
-  net = AlexNet().cuda()
-  criterion = torch.nn.CrossEntropyLoss().cuda()
-  optimizer = torch.optim.Adam(net.parameters(), lr=1e-4)
-  
-
 def adjust_learning_rate(optimizer, epoch):
     """For resnet, the lr starts from 0.1, and is divided by 10 at 80 and 120 epochs"""
     if epoch < 80:
@@ -219,9 +195,9 @@ def main():
     for e in range(1, epoch):
         train_and_test(e)
     if args.which_net == "embed":
-      torch.save(net,args.output_dir + 'teacher_embed')
+      torch.save(net,args.output_dir + '/teacher_embed')
     else:
-      torch.save(net,args.output_dir + 'teacher')
+      torch.save(net,args.output_dir + '/teacher')
  
  
 if __name__ == '__main__':

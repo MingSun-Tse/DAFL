@@ -88,8 +88,12 @@ class AlexNet_half(nn.Module):
       Dropout(p=0.5),
       Linear(in_features=4096, out_features=4096, bias=True),
       ReLU(inplace=True),
-      Linear(in_features=4096, out_features=40, bias=True),
     )
+    num_attributes = 40 # celeba
+    for i in range(num_attributes):
+      setattr(self, 'end' + str(i).zfill(2), nn.Linear(4096, 2))
+    self.num_attributes = num_attributes
+    
     if model:
       self.load_state_dict(torch.load(model))
     if fixed:
@@ -99,11 +103,18 @@ class AlexNet_half(nn.Module):
   def forward(self, x, embed=False):
     if embed:
       x = self.features(x)
+      x = x.view(x.size(0), -1)
       embed = self.classifier[:6](x) # upto and include ReLU
-      x = self.classifier[6:](embed)
-      return x, embed
+      y = []
+      for i in range(self.num_attributes):
+        y.append(eval("self.end" + str(i).zfill(2))(embed))
+      return y, embed
     else:
       x = self.features(x)
       x = x.view(x.size(0), -1)
       x = self.classifier(x)
-      return x
+      y = []
+      for i in range(self.num_attributes):
+        subnet = getattr(self, 'end' + str(i).zfill(2))
+        y.append(subnet(x))
+      return y
