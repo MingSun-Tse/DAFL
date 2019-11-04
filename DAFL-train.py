@@ -26,13 +26,14 @@ from torchvision.datasets.mnist import MNIST
 from lenet import LeNet5Half
 from torchvision.datasets import CIFAR10
 from torchvision.datasets import CIFAR100
+from torchvision.models import mobilenet_v2, alexnet
 import resnet
 from my_utils import LogPrint, set_up_dir, get_CodeID, feat_visualize, check_path, EMA
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
-parser.add_argument('--data', type=str, default='../20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
-parser.add_argument('--teacher_dir', type=str, default='MNIST_model/')
+parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100', 'imagenet'])
+parser.add_argument('--data', type=str)
+parser.add_argument('--teacher_dir', type=str)
 parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
 parser.add_argument('-b', '--batch_size', type=int, default=512, help='size of the batches')
 parser.add_argument('--lr_G', type=float, default=0.2, help='learning rate')
@@ -173,17 +174,22 @@ class Generator(nn.Module):
         img = self.conv_blocks2(img)
         return img
         
-# set up data
+# set up data and teacher pretrained model
+if opt.dataset == "mnist":
+  opt.data = "'../20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST"
+  opt.teacher_dir = "MNIST_model/"
 if opt.dataset == "cifar10":
   opt.data= "../20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR10"
   opt.teacher_dir = "CIFAR10_model/"
 if opt.dataset == "cifar100":
   opt.data = "../20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR100"
   opt.teacher_dir = "Experiments/SERVER218-20191022-094454_teacher-cifar100/weights/"
+if opt.dataset == "imagenet":
+  opt.data = "/home3/luoyang/val/"
   
 # set up model
-teacher = torch.load(opt.teacher_dir + '/teacher').cuda()
-teacher.eval()
+teacher = mobilenet_v2_my(True) if opt.dataset == "imagenet" else torch.load(opt.teacher_dir + '/teacher')
+teacher.eval().cuda()
 criterion = torch.nn.CrossEntropyLoss().cuda()
 if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
   if opt.which_lenet == "_2neurons1":
@@ -202,51 +208,78 @@ generator = Generator().cuda()
 generator = nn.DataParallel(generator)
 
 def kdloss(y, teacher_scores):
-    p = F.log_softmax(y, dim=1)
-    q = F.softmax(teacher_scores, dim=1)
-    l_kl = F.kl_div(p, q, size_average=False)  / y.shape[0]
-    return l_kl
+  p = F.log_softmax(y, dim=1)
+  q = F.softmax(teacher_scores, dim=1)
+  l_kl = F.kl_div(p, q, size_average=False)  / y.shape[0]
+  return l_kl
 
 if opt.dataset == 'MNIST':
-    # Configure data loader
-    net = LeNet5Half().cuda()
-    net = nn.DataParallel(net)
-    data_test = MNIST(opt.data,
-                      train=False,
-                      transform=transforms.Compose([
-                          transforms.Resize((32, 32)),
-                          transforms.ToTensor(),
-                          transforms.Normalize((0.1307,), (0.3081,))
-                          ]))           
-    data_test_loader = DataLoader(data_test, batch_size=64, num_workers=1, shuffle=False)
+  # Configure data loader
+  net = LeNet5Half().cuda()
+  net = nn.DataParallel(net)
+  data_test = MNIST(opt.data,
+                    train=False,
+                    transform=transforms.Compose([
+                        transforms.Resize((32, 32)),
+                        transforms.ToTensor(),
+                        transforms.Normalize((0.1307,), (0.3081,))
+                        ]))           
+  data_test_loader = DataLoader(data_test, batch_size=64, num_workers=1, shuffle=False)
 
-    # Optimizers
-    optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
-    optimizer_S = torch.optim.Adam(net.parameters(), lr=opt.lr_S)
+  # Optimizers
+  optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
+  optimizer_S = torch.optim.Adam(net.parameters(), lr=opt.lr_S)
 
-if opt.dataset != 'MNIST':
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ])
-    if opt.dataset == 'cifar10':
-        net = resnet.ResNet18().cuda()
-        net = nn.DataParallel(net)
-        data_test = CIFAR10(opt.data,
-                          train=False,
-                          transform=transform_test)
-    if opt.dataset == 'cifar100':
-        net = resnet.ResNet18(num_classes=100).cuda()
-        net = nn.DataParallel(net)
-        data_test = CIFAR100(opt.data,
-                          train=False,
-                          transform=transform_test)
-    data_test_loader = DataLoader(data_test, batch_size=opt.batch_size, num_workers=0)
+if 'cifar' in opt.dataset:
+  transform_test = transforms.Compose([
+      transforms.ToTensor(),
+      transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+  ])
+  if opt.dataset == 'cifar10':
+      net = resnet.ResNet18().cuda()
+      net = nn.DataParallel(net)
+      data_test = CIFAR10(opt.data,
+                        train=False,
+                        transform=transform_test)
+  if opt.dataset == 'cifar100':
+      net = resnet.ResNet18(num_classes=100).cuda()
+      net = nn.DataParallel(net)
+      data_test = CIFAR100(opt.data,
+                        train=False,
+                        transform=transform_test)
+  data_test_loader = DataLoader(data_test, batch_size=opt.batch_size, num_workers=0)
+  # Optimizers
+  optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
+  optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
 
-    # Optimizers
-    optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
-    optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
+class mobilenet_v2_my(nn.Module):
+  def __init__(self, pretrained=False):
+    super(mobilenet_v2_my).__init__()
+    if pretrained:
+      self.net = mobilenet_v2(True)
+    else:
+      self.net = mobilenet_v2()
+  def forward(x, out_feature=False):
+    embed = self.net.features(x)
+    x = self.net.classifier(embed)
+    return x, embed if out_feature else x
 
+if opt.dataset == 'imagenet':
+  net = mobilenet_v2()
+  net = nn.DataParallel(net)
+  normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                    std=[0.229, 0.224, 0.225])
+  data_test = datasets.ImageFolder(opt.data, 
+        transforms.Compose([
+              transforms.Resize(256),
+              transforms.CenterCrop(224),
+              transforms.ToTensor(),
+              normalize,
+        ]))
+  data_test_loader = DataLoader(data_test, batch_size=opt.batch_size, shuffle=False, num_workers=4, pin_memory=True)
+  optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
+  optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4)
+  
 def adjust_learning_rate(optimizer, epoch, learning_rate):
     if epoch < 160: # 0.4 * opt.n_epochs: # 800:
         lr = learning_rate
