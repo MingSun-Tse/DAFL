@@ -29,6 +29,7 @@ from torchvision.datasets import CIFAR100
 from torchvision.models import mobilenet_v2, alexnet
 import resnet
 from my_utils import LogPrint, set_up_dir, get_CodeID, feat_visualize, check_path, EMA
+from model import DCGAN_Generator
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100', 'imagenet'])
@@ -145,12 +146,10 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
 
         self.init_size = opt.img_size // 4
-        if opt.mode == "original":
-          self.l1 = nn.Sequential(nn.Linear(opt.latent_dim, 128*self.init_size**2))
-        elif opt.mode == "ours":
+        if opt.dataset == "imagenet":
           self.l1 = nn.Sequential(nn.Linear(opt.latent_dim, 128*self.init_size**2))
         else:
-          raise NotImplementedError
+          self.l1 = nn.Sequential(nn.Linear(opt.latent_dim, 128*self.init_size**2))
         self.conv_blocks0 = nn.Sequential(
             nn.BatchNorm2d(128),
         )
@@ -189,8 +188,21 @@ class mobilenet_v2_my(nn.Module):
     embed = self.net.features(x).mean([2, 3])
     x = self.net.classifier(embed)
     return x, embed if out_feature else x
+
+class alexnet_my(nn.Module):
+  def __init__(self, pretrained=False):
+    super(alexnet_my, self).__init__()
+    if pretrained:
+      self.net = alexnet(True)
+    else:
+      self.net = alexnet()
+  def forward(self, x, out_feature=False):
+    embed = self.net.features(x).view(x.size(0), -1)
+    x = self.net.classifier(embed)
+    return x, embed if out_feature else x
     
 # set up data and teacher pretrained model
+step_ = 1
 if opt.dataset == "mnist":
   opt.data = "'../20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST"
   opt.teacher_dir = "MNIST_model/"
@@ -200,8 +212,10 @@ if opt.dataset == "cifar10":
 if opt.dataset == "cifar100":
   opt.data = "../20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR100"
   opt.teacher_dir = "Experiments/SERVER218-20191022-094454_teacher-cifar100/weights/"
+  step_ = 5
 if opt.dataset == "imagenet":
-  opt.data = "/home3/luoyang/val/"
+  opt.data = "../../Dataset/ILSVRC/Data/CLS-LOC/val"
+  step_ = 50
   
 # set up model
 teacher = mobilenet_v2_my(True) if opt.dataset == "imagenet" else torch.load(opt.teacher_dir + '/teacher')
@@ -220,8 +234,8 @@ if opt.dataset == "MNIST": # set up embed net
   embed_net = LeNet5_2neurons(pretrained).eval().cuda()
   fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
 teacher = nn.DataParallel(teacher)
-generator = Generator().cuda()
-generator = nn.DataParallel(generator)
+generator = DCGAN_Generator(opt.latent_dim) if opt.dataset == "imagenet" else Generator()
+generator = nn.DataParallel(generator.cuda())
 
 def kdloss(y, teacher_scores):
   p = F.log_softmax(y, dim=1)
@@ -263,7 +277,7 @@ if 'cifar' in opt.dataset:
       data_test = CIFAR100(opt.data,
                         train=False,
                         transform=transform_test)
-  data_test_loader = DataLoader(data_test, batch_size=opt.batch_size, num_workers=0)
+  data_test_loader = DataLoader(data_test, batch_size=256, num_workers=0)
   # Optimizers
   optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
   optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
@@ -280,7 +294,7 @@ if opt.dataset == 'imagenet':
               transforms.ToTensor(),
               normalize,
         ]))
-  data_test_loader = DataLoader(data_test, batch_size=10, shuffle=False, num_workers=4, pin_memory=True)
+  data_test_loader = DataLoader(data_test, batch_size=256, shuffle=False, num_workers=4, pin_memory=True)
   optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
   optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4)
   
@@ -321,13 +335,12 @@ history_kld_S = [0] * opt.num_class
 history_prob_var = [0] * opt.num_class
 history_ie = 0
 for epoch in range(opt.n_epochs):
-    # total_correct = 0
-    # avg_loss = 0.0
     if opt.dataset != 'MNIST':
         adjust_learning_rate(optimizer_S, epoch, opt.lr_S)
 
     for step in range(opt.num_iter_per_epoch):
         net.train()
+        total_step = epoch * opt.num_iter_per_epoch + step
         if opt.mode == "original":
           z = Variable(torch.randn(opt.batch_size, opt.latent_dim)).cuda()
           optimizer_G.zero_grad()
@@ -340,7 +353,7 @@ for epoch in range(opt.n_epochs):
           if opt.plot_train_feat and step % 10 == 0:
             feat = embed_net.forward_2neurons(gen_imgs)
             ax_train = feat_visualize(ax_train, feat.data.cpu().numpy(), label.data.cpu().numpy(), if_right.data.cpu().numpy())
-            if step % opt.save_interval == 0:
+            if total_step % opt.save_interval == 0:
               save_train_feat_path = pjoin(rec_img_path, "%s_E%sS%s_feat-visualization-train.jpg" % (ExpID, epoch, step))
               ax_train.set_xlim([-20, 200])
               ax_train.set_ylim([-20, 200])
@@ -350,7 +363,7 @@ for epoch in range(opt.n_epochs):
           
           # check variance of prob
           '''
-          if step % opt.show_interval == 0:
+          if total_step % opt.show_interval == 0:
             prob = F.softmax(outputs_T, dim=1)
             prob_var1 = torch.var(prob, dim=1)
             prob_var0 = torch.var(prob, dim=0)
@@ -382,11 +395,11 @@ for epoch in range(opt.n_epochs):
 
           # analyze label_T
           logtmp = ""
-          for c in range(opt.num_class):
+          for c in np.arange(0, opt.num_class, step_):
             tmp = sum(label.cpu().data.numpy() == c)
             num_sample_per_class[c] = num_sample_per_class[c] * opt.momentum_cnt + tmp * (1-opt.momentum_cnt) if num_sample_per_class[c] else tmp
             logtmp += "%.4f  " % (num_sample_per_class[c] / opt.batch_size)
-          if step % opt.show_interval == 0:
+          if total_step % opt.show_interval == 0:
             logprint(logtmp + ("real class ratio (E%dS%d)" % (epoch, step)))
           
         elif opt.mode == "ours":
@@ -394,6 +407,8 @@ for epoch in range(opt.n_epochs):
           noise_1 = torch.randn(half_bs, opt.latent_dim).cuda()
           noise_2 = torch.randn(half_bs, opt.latent_dim).cuda()
           x = torch.cat([noise_1, noise_2], dim=0)
+          if opt.dataset == "imagenet":
+            x = x.view(x.size(0), x.size(1), 1, 1)
           
           # update G
           gi = 0
@@ -402,6 +417,7 @@ for epoch in range(opt.n_epochs):
             loss_G = torch.zeros(1).cuda()
             gen_imgs = generator(x)
             outputs_T, features_T = teacher(gen_imgs, out_feature=True)
+            outputs_S = net(gen_imgs)
             label_T = outputs_T.argmax(dim=1).data
 
             # one hot loss
@@ -434,9 +450,9 @@ for epoch in range(opt.n_epochs):
             loss_information_entropy = torch.zeros(1)
             if opt.ie:
               # print to check
-              if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
+              if total_step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
-                for c in range(opt.num_class):
+                for c in np.arange(0, opt.num_class, step_):
                   logtmp1 += "%.4f  " % history_acc_S[c]
                   # logtmp2 += "%.4f  " % history_kld_S[c]
                 logprint(logtmp1 + "train history_acc_S (E%dS%d) ave = %.4f" % (epoch, step, np.mean(history_acc_S)))
@@ -456,7 +472,7 @@ for epoch in range(opt.n_epochs):
               '''
               # scheme 2: use history acc of Student to adjust class ratio
               actual_dist = F.softmax(outputs_T, dim=1).mean(dim=0)
-              if step % opt.update_dist_interval == 0:
+              if total_step % opt.update_dist_interval == 0:
                 if opt.uniform_target_dist or (not update_dist_cond):
                   expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
                   temp = 0
@@ -466,9 +482,9 @@ for epoch in range(opt.n_epochs):
               loss_information_entropy = F.kl_div(expect_dist.log().detach(), actual_dist) * opt.num_class * math.log10(math.e)
               history_ie = opt.momentum_cnt * history_ie + (1-opt.momentum_cnt) * loss_information_entropy.item()
               # print to check
-              if step % opt.show_interval == 0 and gi == opt.n_G_update-1:
+              if total_step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
-                for c in range(opt.num_class):
+                for c in np.arange(0, opt.num_class, step_):
                   logtmp1 += "%.4f  " % expect_dist[c]
                   logtmp2 += "%.4f  " % actual_dist[c]
                 logprint(logtmp1 + ("expected class ratio (E%dS%d) ie: %.4f histie: %.4f temp: %.2f" % (epoch, step, loss_information_entropy, history_ie, temp)))
@@ -493,6 +509,7 @@ for epoch in range(opt.n_epochs):
                 gi -= 1 # the loop will not stop unless the class ratios are corrected
               '''
               loss_G += loss_information_entropy * ie_lw
+              # loss_G += -F.kl_div(F.log_softmax(outputs_S), F.softmax(outputs_T))  # adv loss
               
             # cos loss
             update_coslw_cond = np.mean(history_acc_S) > opt.base_acc
@@ -540,7 +557,7 @@ for epoch in range(opt.n_epochs):
           if opt.plot_train_feat and step % 10 == 0:
             feat = embed_net.forward_2neurons(gen_imgs)
             ax_train = feat_visualize(ax_train, feat.data.cpu().numpy(), label_T.data.cpu().numpy(), if_right.data.cpu().numpy())
-            if step % opt.save_interval == 0:
+            if total_step % opt.save_interval == 0:
               save_train_feat_path = pjoin(rec_img_path, "%s_E%sS%s_feat-visualization-train.jpg" % (ExpID, epoch, step))
               ax_train.set_xlim([-20, 200])
               ax_train.set_ylim([-20, 200])
@@ -550,10 +567,10 @@ for epoch in range(opt.n_epochs):
         else:
           raise NotImplementedError
         
-        if step % opt.show_interval == 0:
+        if total_step % opt.show_interval == 0:
             logprint("E%dS%d/%d: [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, step, opt.n_epochs, loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
         
-        if step % opt.test_interval == 0:
+        if (total_step+1) % opt.test_interval == 0:
           total_correct = 0
           avg_loss = 0
           with torch.no_grad():
@@ -579,9 +596,10 @@ for epoch in range(opt.n_epochs):
           logprint(logtmp + ("test acc per class (E%dS%d)" % (epoch, step)))
     
           avg_loss /= len(data_test)
-          logprint("=" * (int(ExpID[-1])+1) + '> E%dS%d: Test Avg. Loss: %f, Accuracy: %f' % (epoch, step, avg_loss.data.item(), 
+          logprint("=" * (int(ExpID[-1])+1) + '> E%dS%d: Test Avg. Loss: %.5f, Accuracy: %.4f' % (epoch, step, avg_loss.data.item(), 
               float(total_correct) / len(data_test)))
           accr = round(float(total_correct) / len(data_test), 4)
           if accr > accr_best:
+              torch.save(generator, opt.output_dir + '/generator')
               torch.save(net, opt.output_dir + '/student')
               accr_best = accr
