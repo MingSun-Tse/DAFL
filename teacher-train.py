@@ -16,19 +16,27 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader 
 import argparse
 from my_utils import LogPrint, set_up_dir, get_CodeID
+from model import AlexNet
+from data_loader import CelebA
+import math
 
 parser = argparse.ArgumentParser(description='train-teacher-network')
 
 # Basic model parameters.
-parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100'])
-parser.add_argument('--data', type=str, default='/home4/wanghuan/Projects/20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST')
-parser.add_argument('--output_dir', type=str, default='/home4/wanghuan/Projects/DAFL/MNIST_teacher_model/')
+parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100', 'CelebA'])
+parser.add_argument('--data', type=str)
+parser.add_argument('--CelebA_attr_file', type=str, default="../../Dataset/CelebA/Anno/list_attr_celeba_my.txt")
+parser.add_argument('--output_dir', type=str)
 parser.add_argument('-p', '--project_name', type=str, default='')
 parser.add_argument('--resume', type=str, default='')
 parser.add_argument('--CodeID', type=str, default='')
 parser.add_argument('--debug', action="store_true")
 parser.add_argument('--which_net', type=str, default="")
+parser.add_argument('-b', '--batchsize', type=int)
 args = parser.parse_args()
+if args.dataset == "CelebA":
+  args.data_CelebA_train = "../../Dataset/CelebA/Img/train/"
+  args.data_CelebA_test = "../../Dataset/CelebA/Img/test/"
 
 # set up log dirs
 TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(args.project_name, args.resume, args.debug)
@@ -38,7 +46,7 @@ args.ExpID = ExpID
 args.CodeID = get_CodeID()
 logprint(args.__dict__)
 
-os.makedirs(args.output_dir, exist_ok=True)  
+os.makedirs(args.output_dir, exist_ok=True)
 
 acc = 0
 acc_best = 0
@@ -97,7 +105,6 @@ if args.dataset == 'cifar10':
     optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
 
 if args.dataset == 'cifar100':
-    
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
@@ -122,6 +129,25 @@ if args.dataset == 'cifar100':
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
 
+if args.dataset == "CelebA":
+  transform_train = transforms.Compose([
+      transforms.RandomCrop(224, padding=4),
+      transforms.RandomHorizontalFlip(),
+      transforms.ToTensor(),
+      transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+  ])
+  transform_test = transforms.Compose([
+      transforms.ToTensor(),
+      transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+  ])
+  data_train = CelebA(args.data_CelebA_train, args.CelebA_attr_file, transform=transform_train)
+  data_test = CelebA(args.data_CelebA_test, args.CelebA_attr_file, transform=transform_test)
+  data_train_loader = DataLoader(data_train, batch_size=args.batchsize, shuffle=True, num_workers=0)
+  data_test_loader = DataLoader(data_test, batch_size=args.batchsize, num_workers=0)
+  net = AlexNet().cuda()
+  criterion = torch.nn.CrossEntropyLoss().cuda()
+  optimizer = torch.optim.Adam(net.parameters(), lr=1e-4)
+  
 
 def adjust_learning_rate(optimizer, epoch):
     """For resnet, the lr starts from 0.1, and is divided by 10 at 80 and 120 epochs"""
@@ -140,20 +166,21 @@ def train(epoch):
     global cur_batch_win
     net.train()
     loss_list, batch_list = [], []
+    n_iter_per_epoch = math.ceil(len(data_train) / args.batchsize)
     for i, (images, labels) in enumerate(data_train_loader):
         images, labels = Variable(images).cuda(), Variable(labels).cuda()
  
         optimizer.zero_grad()
  
         output = net(images)
- 
+
         loss = criterion(output, labels)
  
         loss_list.append(loss.data.item())
         batch_list.append(i+1)
  
-        if i == 1:
-            logprint('Train - Epoch %d, Batch: %d, Loss: %f' % (epoch, i, loss.data.item()))
+        if i % 100 == 0:
+            logprint('Train - E%dS%d/%d, Loss: %f' % (epoch, i, n_iter_per_epoch, loss.data.item()))
  
         loss.backward()
         optimizer.step()
