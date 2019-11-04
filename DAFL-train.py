@@ -88,6 +88,7 @@ if opt.dataset == "cifar100":
   opt.num_class = 100
 if opt.dataset == "imagenet":
   opt.num_class = 1000
+  opt.img_size = 224
 img_shape = (opt.channels, opt.img_size, opt.img_size)
 
 cuda = True
@@ -176,7 +177,19 @@ class Generator(nn.Module):
         img = nn.functional.interpolate(img,scale_factor=2)
         img = self.conv_blocks2(img)
         return img
-        
+
+class mobilenet_v2_my(nn.Module):
+  def __init__(self, pretrained=False):
+    super(mobilenet_v2_my, self).__init__()
+    if pretrained:
+      self.net = mobilenet_v2(True)
+    else:
+      self.net = mobilenet_v2()
+  def forward(self, x, out_feature=False):
+    embed = self.net.features(x).mean([2, 3])
+    x = self.net.classifier(embed)
+    return x, embed if out_feature else x
+    
 # set up data and teacher pretrained model
 if opt.dataset == "mnist":
   opt.data = "'../20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST"
@@ -255,18 +268,6 @@ if 'cifar' in opt.dataset:
   optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
   optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4) # wh: why use different optimizers for non-MNIST?
 
-class mobilenet_v2_my(nn.Module):
-  def __init__(self, pretrained=False):
-    super(mobilenet_v2_my).__init__()
-    if pretrained:
-      self.net = mobilenet_v2(True)
-    else:
-      self.net = mobilenet_v2()
-  def forward(x, out_feature=False):
-    embed = self.net.features(x)
-    x = self.net.classifier(embed)
-    return x, embed if out_feature else x
-
 if opt.dataset == 'imagenet':
   net = mobilenet_v2()
   net = nn.DataParallel(net)
@@ -279,7 +280,7 @@ if opt.dataset == 'imagenet':
               transforms.ToTensor(),
               normalize,
         ]))
-  data_test_loader = DataLoader(data_test, batch_size=opt.batch_size, shuffle=False, num_workers=4, pin_memory=True)
+  data_test_loader = DataLoader(data_test, batch_size=10, shuffle=False, num_workers=4, pin_memory=True)
   optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
   optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4)
   
@@ -303,7 +304,7 @@ opt.ExpID = ExpID
 opt.CodeID = get_CodeID()
 logprint(opt.__dict__)
 
-if opt.mode == "ours":
+if opt.mode == "ours" and opt.ema:
   ema_G = EMA(opt.ema)
   for name, param in generator.named_parameters():
     if param.requires_grad:
@@ -507,9 +508,10 @@ for epoch in range(opt.n_epochs):
             
             # 2019/10/21 EMA to avoid collpase
             optimizer_G.zero_grad(); loss_G.backward(); optimizer_G.step()
-            for name, param in generator.named_parameters():
-              if param.requires_grad:
-                param.data = ema_G(name, param.data)
+            if opt.ema:
+              for name, param in generator.named_parameters():
+                if param.requires_grad:
+                  param.data = ema_G(name, param.data)
             gi += 1
           
           # update S
