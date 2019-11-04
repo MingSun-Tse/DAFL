@@ -189,6 +189,7 @@ def main():
   for e in range(epoch):
     acc = train_and_test(e)
     if acc > max_acc:
+      max_acc = acc
       torch.save(net, args.output_dir + '/teacher')
 
 if __name__ == '__main__':
