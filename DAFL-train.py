@@ -359,10 +359,9 @@ for epoch in range(opt.n_epochs):
               ax_train.set_ylim([-20, 200])
               fig_train.savefig(save_train_feat_path, dpi=400)
               fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
-          # ---
           
-          # check variance of prob
           '''
+          # check variance of prob
           if total_step % opt.show_interval == 0:
             prob = F.softmax(outputs_T, dim=1)
             prob_var1 = torch.var(prob, dim=1)
@@ -417,7 +416,6 @@ for epoch in range(opt.n_epochs):
             loss_G = torch.zeros(1).cuda()
             gen_imgs = generator(x)
             outputs_T, features_T = teacher(gen_imgs, out_feature=True)
-            outputs_S = net(gen_imgs)
             label_T = outputs_T.argmax(dim=1).data
 
             # one hot loss
@@ -439,11 +437,6 @@ for epoch in range(opt.n_epochs):
             if opt.lw_prob_var:
               var = torch.var(F.softmax(outputs_T, dim=1), dim=0)
               loss_G += var.mean() * opt.lw_prob_var
-              # logtmp = ""
-              # for c in range(opt.num_class):
-                # history_prob_var[c] = history_prob_var[c] * opt.momentum_cnt + var[c] * (1-opt.momentum_cnt) \
-                    # if history_prob_var[c] else var[c]
-                # logtmp += "%.4f  " % history_prob_var[c].item()
             
             # ie loss
             update_dist_cond = np.mean(history_acc_S) > opt.base_acc
