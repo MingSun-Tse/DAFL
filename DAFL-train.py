@@ -23,16 +23,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 from torchvision.datasets.mnist import MNIST
-from lenet import LeNet5Half
 from torchvision.datasets import CIFAR10
 from torchvision.datasets import CIFAR100
 from torchvision.models import mobilenet_v2, alexnet
+from lenet import LeNet5Half
 import resnet
+from model import DCGAN_Generator, AlexNet_half
 from my_utils import LogPrint, set_up_dir, get_CodeID, feat_visualize, check_path, EMA
-from model import DCGAN_Generator
+from data_loader import CelebA
+
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100', 'imagenet'])
+parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100', 'celeba', 'imagenet'])
 parser.add_argument('--data', type=str)
 parser.add_argument('--teacher_dir', type=str)
 parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
@@ -90,12 +92,9 @@ if opt.dataset == "cifar100":
 if opt.dataset == "imagenet":
   opt.num_class = 1000
   opt.img_size = 224
-img_shape = (opt.channels, opt.img_size, opt.img_size)
-
-cuda = True
-accr = 0
-accr_best = 0
-
+if opt.dataset == "celeba":
+  opt.num_class = 2
+  
 class LeNet5_2neurons(nn.Module):
   def __init__(self, model=None, fixed=False):
     super(LeNet5_2neurons, self).__init__()
@@ -201,26 +200,31 @@ class alexnet_my(nn.Module):
     x = self.net.classifier(embed)
     return x, embed if out_feature else x
     
-# set up data and teacher pretrained model
+# set up data path and teacher pretrained model path
 step_ = 1
 if opt.dataset == "mnist":
   opt.data = "'../20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST"
   opt.teacher_dir = "MNIST_model/"
+  
 if opt.dataset == "cifar10":
   opt.data= "../20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR10"
   opt.teacher_dir = "CIFAR10_model/"
+
 if opt.dataset == "cifar100":
   opt.data = "../20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR100"
   opt.teacher_dir = "Experiments/SERVER218-20191022-094454_teacher-cifar100/weights/"
   step_ = 5
+
 if opt.dataset == "imagenet":
   opt.data = "../../Dataset/ILSVRC/Data/CLS-LOC/val"
   step_ = 50
-  
-# set up model
+
+if opt.dataset == 'celeba':
+  opt.teacher_dir = "Experiments/SERVER5-20191105-130151_CelebA-Teacher-Attractive/weights/"
+
+# set up teacher and generator
 teacher = mobilenet_v2_my(True) if opt.dataset == "imagenet" else torch.load(opt.teacher_dir + '/teacher')
 teacher.eval().cuda()
-criterion = torch.nn.CrossEntropyLoss().cuda()
 if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
   if opt.which_lenet == "_2neurons1":
     pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
@@ -228,14 +232,20 @@ if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
     pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons_2/w*/*E23S0*.pth"
   pretrained = check_path(pretrained)
   teacher = LeNet5_2neurons(pretrained).eval().cuda()
-if opt.dataset == "MNIST": # set up embed net
+teacher = nn.DataParallel(teacher)
+if opt.dataset in ["imagenet", 'celeba']:
+  generator = DCGAN_Generator(opt.latent_dim)
+else:
+  generator = Generator()
+generator = nn.DataParallel(generator.cuda())
+criterion = torch.nn.CrossEntropyLoss().cuda()
+
+# set up embed net
+if opt.dataset == "MNIST":
   pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
   pretrained = check_path(pretrained)
   embed_net = LeNet5_2neurons(pretrained).eval().cuda()
   fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
-teacher = nn.DataParallel(teacher)
-generator = DCGAN_Generator(opt.latent_dim) if opt.dataset == "imagenet" else Generator()
-generator = nn.DataParallel(generator.cuda())
 
 def kdloss(y, teacher_scores):
   p = F.log_softmax(y, dim=1)
@@ -243,6 +253,7 @@ def kdloss(y, teacher_scores):
   l_kl = F.kl_div(p, q, size_average=False)  / y.shape[0]
   return l_kl
 
+# set up student, data loader and optimizer
 if opt.dataset == 'MNIST':
   # Configure data loader
   net = LeNet5Half().cuda()
@@ -297,9 +308,24 @@ if opt.dataset == 'imagenet':
   data_test_loader = DataLoader(data_test, batch_size=256, shuffle=False, num_workers=4, pin_memory=True)
   optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
   optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4)
-  
+
+if opt.dataset == 'celeba':
+  net = AlexNet_half()
+  net = nn.DataParallel(net)
+  normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                    std=[0.229, 0.224, 0.225])
+  transform_test = transforms.Compose([
+      transforms.ToTensor(),
+      normalize])
+  opt.data_CelebA_test = "../../Dataset/CelebA/Img/test/"
+  opt.CelebA_attr_file = "../../Dataset/CelebA/Anno/list_attr_celeba.txt"
+  data_test = CelebA(opt.data_CelebA_test,  opt.CelebA_attr_file, transform=transform_test)
+  data_test_loader = DataLoader(data_test, batch_size=256, num_workers=0)
+  optimizer_G = torch.optim.Adam(generator.parameters(), lr=opt.lr_G)
+  optimizer_S = torch.optim.Adam(      net.parameters(), lr=opt.lr_S)
+
 def adjust_learning_rate(optimizer, epoch, learning_rate):
-    if epoch < opt.decay_lr_epoch1: 
+    if epoch < opt.decay_lr_epoch1:
         lr = learning_rate
     elif epoch < opt.decay_lr_epoch2:
         lr = 0.1 * learning_rate
@@ -309,7 +335,7 @@ def adjust_learning_rate(optimizer, epoch, learning_rate):
         lr = 0.001 * learning_rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-        
+
 # set up log dirs
 TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(opt.project_name, opt.resume, opt.debug)
 opt.output_dir = weights_path
@@ -327,6 +353,8 @@ if opt.mode == "ours" and opt.ema:
 # ----------
 #  Training
 # ----------
+accr = 0
+accr_best = 0
 batches_done = 0
 sample_prob = torch.ones(opt.num_class) / opt.num_class
 num_sample_per_class = [0] * opt.num_class
@@ -335,7 +363,7 @@ history_kld_S = [0] * opt.num_class
 history_prob_var = [0] * opt.num_class
 history_ie = 0
 for epoch in range(opt.n_epochs):
-    if opt.dataset != 'MNIST':
+    if opt.dataset not in ['MNIST', 'celeba']:
         adjust_learning_rate(optimizer_S, epoch, opt.lr_S)
 
     for step in range(opt.num_iter_per_epoch):
@@ -343,6 +371,8 @@ for epoch in range(opt.n_epochs):
         total_step = epoch * opt.num_iter_per_epoch + step
         if opt.mode == "original":
           z = Variable(torch.randn(opt.batch_size, opt.latent_dim)).cuda()
+          if opt.dataset in ["imagenet", "celeba"]: # use DCGAN_Generator
+            z = z.view(z.size(0), z.size(1), 1, 1)
           optimizer_G.zero_grad()
           optimizer_S.zero_grad()
           gen_imgs = generator(z)
@@ -381,9 +411,9 @@ for epoch in range(opt.n_epochs):
           loss_activation = -features_T.abs().mean()
           loss_one_hot = criterion(outputs_T, pred)
           softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
-          # loss_information_entropy1 = (softmax_o_T * torch.log(softmax_o_T)).sum()
-          expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
-          loss_information_entropy = F.kl_div(expect_dist.log(), softmax_o_T) * opt.num_class * math.log10(math.e)
+          loss_information_entropy = (softmax_o_T * torch.log(softmax_o_T)).sum()
+          # expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
+          # loss_information_entropy = F.kl_div(expect_dist.log(), softmax_o_T) * opt.num_class * math.log10(math.e)
           # print(loss_information_entropy1.item(), loss_information_entropy.item(), loss_information_entropy1.item()+math.log(opt.num_class))
           loss = loss_one_hot * opt.oh + loss_information_entropy * opt.ie + loss_activation * opt.a
           loss_kd = kdloss(net(gen_imgs.detach()), outputs_T.detach()) 
@@ -406,7 +436,7 @@ for epoch in range(opt.n_epochs):
           noise_1 = torch.randn(half_bs, opt.latent_dim).cuda()
           noise_2 = torch.randn(half_bs, opt.latent_dim).cuda()
           x = torch.cat([noise_1, noise_2], dim=0)
-          if opt.dataset == "imagenet":
+          if opt.dataset in ["imagenet", "celeba"]: # use DCGAN_Generator
             x = x.view(x.size(0), x.size(1), 1, 1)
           
           # update G
@@ -474,6 +504,7 @@ for epoch in range(opt.n_epochs):
                   expect_dist = F.softmax(-torch.from_numpy(np.array(history_acc_S)) / temp, dim=0).cuda().float()
               loss_information_entropy = F.kl_div(expect_dist.log().detach(), actual_dist) * opt.num_class * math.log10(math.e)
               history_ie = opt.momentum_cnt * history_ie + (1-opt.momentum_cnt) * loss_information_entropy.item()
+              
               # print to check
               if total_step % opt.show_interval == 0 and gi == opt.n_G_update-1:
                 logtmp1 = ""; logtmp2 = ""
@@ -482,6 +513,7 @@ for epoch in range(opt.n_epochs):
                   logtmp2 += "%.4f  " % actual_dist[c]
                 logprint(logtmp1 + ("expected class ratio (E%dS%d) ie: %.4f histie: %.4f temp: %.2f" % (epoch, step, loss_information_entropy, history_ie, temp)))
                 logprint(logtmp2 + ("real     class ratio (E%dS%d)" % (epoch, step)))
+              
               # oscillation check
               ie_lw = opt.ie
               '''
@@ -561,7 +593,8 @@ for epoch in range(opt.n_epochs):
           raise NotImplementedError
         
         if total_step % opt.show_interval == 0:
-            logprint("E%dS%d/%d: [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, step, opt.n_epochs, loss_one_hot.item(), loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
+            logprint("E%dS%d/%d: [loss_oh: %f] [loss_ie: %f] [loss_a: %f] [loss_kd: %f]" % (epoch, step, opt.num_iter_per_epoch, loss_one_hot.item(),
+                loss_information_entropy.item(), loss_activation.item(), loss_kd.item()))
         
         if (total_step+1) % opt.test_interval == 0:
           total_correct = 0

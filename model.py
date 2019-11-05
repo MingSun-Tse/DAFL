@@ -99,12 +99,12 @@ class AlexNet(nn.Module):
       for p in self.parameters():
         p.require_grad = False
   
-  def forward(self, x, embed=False):
+  def forward(self, x, out_feature=False):
     x = self.features(x)
     x = x.view(x.size(0), -1)
     feat = self.classifier[:6](x) # upto and include ReLU
     x = self.classifier[6:](feat)
-    if embed:
+    if out_feature:
       return x, feat
     else:
       return x
@@ -143,12 +143,11 @@ class AlexNet_half(nn.Module):
       for p in self.parameters():
         p.require_grad = False
   
-  def forward(self, x, embed=False):
+  def forward(self, x):
     x = self.features(x)
     x = x.view(x.size(0), -1)
-    feat = self.classifier[:6](x) # upto and include ReLU
-    x = self.classifier[6:](feat)
-    return x, feat if embed else x
+    x = self.classifier(x)
+    return x
     
     
 # ref: https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html?highlight=dcgan
@@ -181,7 +180,7 @@ class DCGAN_Generator(nn.Module):
           # state size. (ngf) x 112 x 112
           nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False),
           nn.Tanh(),
-          nn.BatchNorm2d(nc, affine=False) # added by huan
+          # nn.BatchNorm2d(nc, affine=False) # added by huan
           # state size. (ngf) x 224 x 224
       )
 

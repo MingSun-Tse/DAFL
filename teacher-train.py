@@ -31,7 +31,7 @@ parser.add_argument('--resume', type=str, default='')
 parser.add_argument('--CodeID', type=str, default='')
 parser.add_argument('--debug', action="store_true")
 parser.add_argument('--which_net', type=str, default="")
-parser.add_argument('-b', '--batchsize', type=int)
+parser.add_argument('-b', '--batchsize', type=int, default=256)
 args = parser.parse_args()
 
 if args.dataset == "celeba":
@@ -184,7 +184,6 @@ def train(epoch):
  
         loss.backward()
         optimizer.step()
- 
  
 def test():
   net.eval()
