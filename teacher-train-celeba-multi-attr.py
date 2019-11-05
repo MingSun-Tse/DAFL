@@ -8,6 +8,7 @@ import os
 from lenet import LeNet5
 import resnet
 import torch
+import torch.nn.functional as F
 from torch.autograd import Variable
 from torchvision.datasets.mnist import MNIST
 from torchvision.datasets import CIFAR10
@@ -81,6 +82,16 @@ def train(epoch):
         accu.append(accuracy(output[j], target[:, j], topk=(1,)))
         losses[j].update(loss[j].item(), input.size(0))
         top1[j].update(accu[j][0].item(), input.size(0))
+        
+        # print to check the predicted labels
+        if i % 100 == 0:
+          outT = output[j]
+          prob = F.softmax(outT, dim=1)
+          labelT_pr = outT.argmax(dim=1).data.cpu().numpy()
+          labelT_gt = target[:, j].data.cpu().numpy()
+          print("attr %2d: predicted sample ratio of 0 = %.2f, 1 = %.2f" % (j, sum(labelT_pr==0)/args.batchsize, sum(labelT_pr==1)/args.batchsize))
+          print("attr %2d: groundTru sample ratio of 0 = %.2f, 1 = %.2f" % (j, sum(labelT_gt==0)/args.batchsize, sum(labelT_gt==1)/args.batchsize))
+          
       losses_avg = [losses[k].avg for k in range(len(losses))]
       top1_avg = [top1[k].avg for k in range(len(top1))]
       loss_avg = sum(losses_avg) / len(losses_avg)
@@ -183,7 +194,7 @@ def train_and_test(epoch):
   return acc
  
 def main():
-  test(data_test_loader, net, criterion)
+  # test(data_test_loader, net, criterion) # initial test
   epoch = 10 # it is very easy to converge, so 10 epochs is enough.
   max_acc = 0
   for e in range(epoch):

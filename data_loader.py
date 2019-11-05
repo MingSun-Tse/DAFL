@@ -13,7 +13,7 @@ def is_img(x):
   else:
     return False
 
-class CelebA(data.Dataset):
+class CelebA_multi_attr(data.Dataset):
   def __init__(self, img_dir, label_file, transform):
     self.img_list = [os.path.join(img_dir, i) for i in os.listdir(img_dir) if is_img(i)]
     self.transform = transform
@@ -34,6 +34,25 @@ class CelebA(data.Dataset):
     img = img.resize((224, 224)) # for alexnet
     img = self.transform(img)
     return img.squeeze(0), self.label[img_name]
-
+  def __len__(self):
+    return len(self.img_list)
+    
+# only for the most balanced attribute "Attractive"
+class CelebA(data.Dataset):
+  def __init__(self, img_dir, label_file, transform):
+    self.img_list = [os.path.join(img_dir, i) for i in os.listdir(img_dir) if is_img(i)]
+    self.transform = transform
+    self.label = {}
+    for line in open(label_file):
+      if ".jpg" not in line: continue
+      img_name, *attr = line.strip().split()
+      self.label[img_name] = int(attr[2] == "1") # "Attractive" is at the third position of all attrs
+  def __getitem__(self, index):
+    img_path = self.img_list[index]
+    img_name = img_path.split("/")[-1]
+    img = Image.open(img_path).convert("RGB")
+    img = img.resize((224, 224)) # for alexnet
+    img = self.transform(img)
+    return img.squeeze(0), self.label[img_name]
   def __len__(self):
     return len(self.img_list)

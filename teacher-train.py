@@ -23,7 +23,7 @@ import math
 parser = argparse.ArgumentParser(description='train-teacher-network')
 
 # Basic model parameters.
-parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100',])
+parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100', 'celeba',])
 parser.add_argument('--data', type=str)
 parser.add_argument('--output_dir', type=str)
 parser.add_argument('-p', '--project_name', type=str, default='')
@@ -34,6 +34,11 @@ parser.add_argument('--which_net', type=str, default="")
 parser.add_argument('-b', '--batchsize', type=int)
 args = parser.parse_args()
 
+if args.dataset == "celeba":
+  args.data_CelebA_train = "../../Dataset/CelebA/Img/train/"
+  args.data_CelebA_test  = "../../Dataset/CelebA/Img/test/"
+  args.CelebA_attr_file  = "../../Dataset/CelebA/Anno/list_attr_celeba.txt"
+
 # set up log dirs
 TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(args.project_name, args.resume, args.debug)
 args.output_dir = weights_path
@@ -43,9 +48,6 @@ args.CodeID = get_CodeID()
 logprint(args.__dict__)
 
 os.makedirs(args.output_dir, exist_ok=True)
-
-acc = 0
-acc_best = 0
 
 if args.dataset == 'MNIST':
     
@@ -125,6 +127,28 @@ if args.dataset == 'cifar100':
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
 
+if args.dataset == 'celeba':
+  normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                    std=[0.229, 0.224, 0.225])
+  transform_train = transforms.Compose([
+      transforms.RandomHorizontalFlip(),
+      transforms.ToTensor(),
+      normalize,
+  ])
+  transform_test = transforms.Compose([
+      transforms.ToTensor(),
+      normalize,
+  ])
+  data_train = CelebA(args.data_CelebA_train, args.CelebA_attr_file, transform=transform_train)
+  data_test  = CelebA(args.data_CelebA_test,  args.CelebA_attr_file, transform=transform_test)
+  data_train_loader = DataLoader(data_train, batch_size=args.batchsize, shuffle=True, num_workers=0)
+  data_test_loader  = DataLoader(data_test,  batch_size=args.batchsize, num_workers=0)
+
+  # set up model
+  net = AlexNet().cuda()
+  criterion = torch.nn.CrossEntropyLoss().cuda()
+  optimizer = torch.optim.Adam(net.parameters(), lr=1e-4) # according to DAFL, use Adam with 1e-4 lr
+
 def adjust_learning_rate(optimizer, epoch):
     """For resnet, the lr starts from 0.1, and is divided by 10 at 80 and 120 epochs"""
     if epoch < 80:
@@ -137,7 +161,7 @@ def adjust_learning_rate(optimizer, epoch):
         param_group['lr'] = lr
         
 def train(epoch):
-    if args.dataset != 'MNIST':
+    if args.dataset not in ['MNIST', 'celeba']:
         adjust_learning_rate(optimizer, epoch)
     global cur_batch_win
     net.train()
@@ -148,7 +172,7 @@ def train(epoch):
  
         optimizer.zero_grad()
  
-        output = net(images)
+        output = net(images, embed=False)
 
         loss = criterion(output, labels)
  
@@ -163,42 +187,41 @@ def train(epoch):
  
  
 def test():
-    global acc, acc_best
-    net.eval()
-    total_correct = 0
-    avg_loss = 0.0
-    with torch.no_grad():
-        for i, (images, labels) in enumerate(data_test_loader):
-            images, labels = Variable(images).cuda(), Variable(labels).cuda()
-            output = net(images)
-            avg_loss += criterion(output, labels).sum()
-            pred = output.data.max(1)[1]
-            total_correct += pred.eq(labels.data.view_as(pred)).sum()
- 
-    avg_loss /= len(data_test)
-    acc = float(total_correct) / len(data_test)
-    if acc_best < acc:
-        acc_best = acc
-    logprint('Test Avg. Loss: %f, Accuracy: %f' % (avg_loss.data.item(), acc))
- 
- 
+  net.eval()
+  total_correct = 0
+  avg_loss = 0.0
+  with torch.no_grad():
+      for i, (images, labels) in enumerate(data_test_loader):
+          images, labels = Variable(images).cuda(), Variable(labels).cuda()
+          output = net(images)
+          avg_loss += criterion(output, labels).sum()
+          pred = output.data.max(1)[1]
+          total_correct += pred.eq(labels.data.view_as(pred)).sum()
+
+  avg_loss /= len(data_test)
+  acc = float(total_correct) / len(data_test)
+  logprint('Test Avg. Loss: %f, Accuracy: %f' % (avg_loss.data.item(), acc))
+  return acc
+
 def train_and_test(epoch):
-    train(epoch)
-    test()
- 
+  train(epoch)
+  acc = test()
+  return acc
  
 def main():
-    if args.dataset == 'MNIST':
-        epoch = 10
-    else:
-        epoch = 200
-    for e in range(1, epoch):
-        train_and_test(e)
-    if args.which_net == "embed":
-      torch.save(net,args.output_dir + '/teacher_embed')
-    else:
-      torch.save(net,args.output_dir + '/teacher')
- 
- 
+  acc = 0; acc_best = 0
+  if args.dataset == 'MNIST':
+    epoch = 10
+  else:
+    epoch = 200
+  for e in range(1, epoch):
+    acc = train_and_test(e)
+    if acc > acc_best:
+      acc_best = acc
+      if args.which_net == "embed":
+        torch.save(net,args.output_dir + '/teacher_embed')
+      else:
+        torch.save(net,args.output_dir + '/teacher')
+
 if __name__ == '__main__':
-    main()
+  main()
