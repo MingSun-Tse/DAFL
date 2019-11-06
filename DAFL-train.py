@@ -203,8 +203,8 @@ class alexnet_my(nn.Module):
     
 # set up data path and teacher pretrained model path
 step_ = 1
-if opt.dataset == "mnist":
-  opt.data = "'../20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST"
+if opt.dataset == "MNIST":
+  opt.data = "../20180918_KD_for_NST/TaskAgnosticDeepCompression/Bin_CIFAR10/data_MNIST"
   opt.teacher_dir = "MNIST_model/"
   
 if opt.dataset == "cifar10":
@@ -242,7 +242,7 @@ generator = nn.DataParallel(generator.cuda())
 criterion = torch.nn.CrossEntropyLoss().cuda()
 
 # set up embed net
-if opt.dataset == "MNIST":
+if opt.dataset == "MNIST" and opt.plot_train_feat:
   pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
   pretrained = check_path(pretrained)
   embed_net = LeNet5_2neurons(pretrained).eval().cuda()
@@ -544,11 +544,14 @@ for epoch in range(opt.n_epochs):
             update_coslw_cond = np.mean(history_acc_S) > opt.base_acc
             if opt.a and update_coslw_cond:
               embed_1, embed_2 = torch.split(features_T, half_bs, dim=0)
-              x_cos = F.cosine_similarity(noise_1, noise_2)
+              # y_cos = 1 - F.cosine_similarity(embed_1, embed_2)
+              # x_cos = 1 - F.cosine_similarity(noise_1, noise_2)
+              # loss_activation = y_cos / x_cos
               y_cos = F.cosine_similarity(embed_1, embed_2)
+              x_cos = F.cosine_similarity(noise_1, noise_2)
               loss_activation = y_cos / torch.abs(x_cos) if opt.use_sign else y_cos / x_cos
               loss_activation = loss_activation.mean()
-              loss_G += loss_activation * opt.a
+              loss_G += -loss_activation * opt.a
             else:
               loss_activation = torch.zeros(1).cuda()
             
