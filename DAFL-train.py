@@ -584,7 +584,10 @@ for epoch in range(opt.n_epochs):
           # visualize
           if_right = torch.ones_like(label_T)
           if opt.plot_train_feat and step % 10 == 0:
-            feat = embed_net.forward_2neurons(gen_imgs)
+            if opt.dataset == "celeba":
+              feat = outputs_T
+            else:
+              feat = embed_net.forward_2neurons(gen_imgs)
             ax_train = feat_visualize(ax_train, feat.data.cpu().numpy(), label_T.data.cpu().numpy(), if_right.data.cpu().numpy())
             if total_step % opt.save_interval == 0:
               save_train_feat_path = pjoin(rec_img_path, "%s_E%sS%s_feat-visualization-train.jpg" % (ExpID, epoch, step))
