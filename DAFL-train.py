@@ -87,6 +87,7 @@ opt.oscill_thre *= (math.log10(math.e) * opt.num_class)
 
 if opt.dataset != "MNIST":
   opt.channels = 3
+  opt.latent_dim = 1000
 if opt.dataset == "cifar100":
   opt.num_class = 100
 if opt.dataset == "imagenet":
@@ -245,7 +246,7 @@ if opt.dataset == "MNIST":
   pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
   pretrained = check_path(pretrained)
   embed_net = LeNet5_2neurons(pretrained).eval().cuda()
-  fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
+fig_train = plt.figure(); ax_train = fig_train.add_subplot(111)
 
 def kdloss(y, teacher_scores):
   p = F.log_softmax(y, dim=1)
@@ -381,7 +382,7 @@ for epoch in range(opt.n_epochs):
           # -2019/10/12: visualize
           label = outputs_T.argmax(dim=1); if_right = torch.ones_like(label)
           if opt.plot_train_feat and step % 10 == 0:
-            if opt.dataset == "MNIST:
+            if opt.dataset == "MNIST":
               feat = embed_net.forward_2neurons(gen_imgs)
             elif opt.dataset == "celeba":
               feat = outputs_T
