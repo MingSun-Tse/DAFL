@@ -31,7 +31,7 @@ import resnet
 from model import DCGAN_Generator, AlexNet_half
 from my_utils import LogPrint, set_up_dir, get_CodeID, feat_visualize, check_path, EMA
 from data_loader import CelebA
-
+from model_WRN import WideResNet
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='MNIST', choices=['MNIST','cifar10','cifar100', 'celeba', 'imagenet'])
@@ -82,6 +82,7 @@ parser.add_argument('--use_detach_for_my_oh', action="store_true")
 parser.add_argument('--decay_lr_epoch1', type=int, default=160)
 parser.add_argument('--decay_lr_epoch2', type=int, default=320)
 parser.add_argument('--decay_lr_epoch3', type=int, default=480)
+parser.add_argument('--compare_zskt', action="store_true")
 opt = parser.parse_args()
 opt.oscill_thre *= (math.log10(math.e) * opt.num_class)
 
@@ -223,17 +224,25 @@ if opt.dataset == "imagenet":
 if opt.dataset == 'celeba':
   opt.teacher_dir = "Experiments/SERVER5-20191105-130151_CelebA-Teacher-Attractive/weights/"
 
-# set up teacher and generator
-teacher = mobilenet_v2_my(True) if opt.dataset == "imagenet" else torch.load(opt.teacher_dir + '/teacher')
-teacher.eval().cuda()
-if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
-  if opt.which_lenet == "_2neurons1":
-    pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
-  elif opt.which_lenet == "_2neurons2":
-    pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons_2/w*/*E23S0*.pth"
-  pretrained = check_path(pretrained)
-  teacher = LeNet5_2neurons(pretrained).eval().cuda()
-teacher = nn.DataParallel(teacher)
+# set up teacher
+if opt.compare_zskt:
+  teacher = WideResNet(depth=40, num_classes=10, widen_factor=2, dropRate=0.0)
+  pretrained = "./WRN_model/WRN-40-2/last.pth.tar"
+  teacher.load_state_dict(torch.load(pretrained)["state_dict"]).cuda().eval()
+  teacher = nn.DataParallel(teacher)
+else:
+  teacher = mobilenet_v2_my(True) if opt.dataset == "imagenet" else torch.load(opt.teacher_dir + '/teacher')
+  teacher.eval().cuda()
+  if opt.dataset == "MNIST" and "_2neurons" in opt.which_lenet:
+    if opt.which_lenet == "_2neurons1":
+      pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons/w*/*E21S0*.pth"
+    elif opt.which_lenet == "_2neurons2":
+      pretrained = "../20180918*/Task*2/AgnosticMC/Bin_CIFAR10/train*/trained_weights_lenet5_2neurons_2/w*/*E23S0*.pth"
+    pretrained = check_path(pretrained)
+    teacher = LeNet5_2neurons(pretrained).eval().cuda()
+  teacher = nn.DataParallel(teacher)
+
+# set up generator
 if opt.dataset in ["imagenet", 'celeba']:
   generator = DCGAN_Generator(opt.latent_dim)
 else:
@@ -278,11 +287,15 @@ if 'cifar' in opt.dataset:
       transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
   ])
   if opt.dataset == 'cifar10':
-      net = resnet.ResNet18().cuda()
-      net = nn.DataParallel(net)
       data_test = CIFAR10(opt.data,
                         train=False,
                         transform=transform_test)
+      if opt.compare_zskt:
+        net = WideResNet(depth=16, num_classes=10, widen_factor=2, dropRate=0.0)
+      else:
+        net = resnet.ResNet18().cuda()
+      net = nn.DataParallel(net)
+      
   if opt.dataset == 'cifar100':
       net = resnet.ResNet18(num_classes=100).cuda()
       net = nn.DataParallel(net)
