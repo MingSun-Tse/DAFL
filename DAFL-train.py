@@ -551,7 +551,7 @@ for epoch in range(opt.n_epochs):
               x_cos = F.cosine_similarity(noise_1, noise_2)
               loss_activation = y_cos / torch.abs(x_cos) if opt.use_sign else y_cos / x_cos
               loss_activation = loss_activation.mean()
-              loss_G += -loss_activation * opt.a
+              loss_G += loss_activation * opt.a
             else:
               loss_activation = torch.zeros(1).cuda()
             
