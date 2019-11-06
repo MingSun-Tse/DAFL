@@ -310,7 +310,7 @@ if opt.dataset == 'imagenet':
   optimizer_S = torch.optim.SGD(net.parameters(), lr=opt.lr_S, momentum=0.9, weight_decay=5e-4)
 
 if opt.dataset == 'celeba':
-  net = AlexNet_half()
+  net = AlexNet_half().cuda()
   net = nn.DataParallel(net)
   normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                     std=[0.229, 0.224, 0.225])
@@ -411,7 +411,7 @@ for epoch in range(opt.n_epochs):
           loss_activation = -features_T.abs().mean()
           loss_one_hot = criterion(outputs_T, pred)
           softmax_o_T = torch.nn.functional.softmax(outputs_T, dim = 1).mean(dim = 0)
-          loss_information_entropy = (softmax_o_T * torch.log(softmax_o_T)).sum()
+          loss_information_entropy = (softmax_o_T * torch.log10(softmax_o_T)).sum()
           # expect_dist = torch.ones(opt.num_class).cuda() / opt.num_class
           # loss_information_entropy = F.kl_div(expect_dist.log(), softmax_o_T) * opt.num_class * math.log10(math.e)
           # print(loss_information_entropy1.item(), loss_information_entropy.item(), loss_information_entropy1.item()+math.log(opt.num_class))
