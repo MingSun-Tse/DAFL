@@ -25,7 +25,7 @@ import torch
 from torchvision.datasets.mnist import MNIST
 from torchvision.datasets import CIFAR10
 from torchvision.datasets import CIFAR100
-from torchvision.models import mobilenet_v2, alexnet
+# from torchvision.models import mobilenet_v2, alexnet
 from lenet import LeNet5Half
 import resnet
 from model import DCGAN_Generator, AlexNet_half
