@@ -127,14 +127,15 @@ class AlexNet_half(nn.Module):
       ReLU(inplace=True),
       MaxPool2d(kernel_size=3, stride=2, padding=0, dilation=1, ceil_mode=False),
     )
+    p = 0
     self.classifier = Sequential(
-      Dropout(p=0.5),
-      Linear(in_features=4608, out_features=4096, bias=True),
+      Dropout(p=p),
+      Linear(in_features=4608, out_features=2048, bias=True),
       ReLU(inplace=True),
-      Dropout(p=0.5),
-      Linear(in_features=4096, out_features=4096, bias=True),
+      Dropout(p=p),
+      Linear(in_features=2048, out_features=2048, bias=True),
       ReLU(inplace=True),
-      Linear(in_features=4096, out_features=2, bias=True),
+      Linear(in_features=2048, out_features=2, bias=True),
     )
     
     if model:
@@ -148,7 +149,6 @@ class AlexNet_half(nn.Module):
     x = x.view(x.size(0), -1)
     x = self.classifier(x)
     return x
-    
     
 # ref: https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html?highlight=dcgan
 class DCGAN_Generator(nn.Module):
@@ -186,3 +186,56 @@ class DCGAN_Generator(nn.Module):
 
     def forward(self, input):
       return self.main(input)
+      
+# ref to ZSKD: https://github.com/MingSun-Tse/ZSKD/blob/master/di_generation/model_alex_full.py
+class AlexNet_cifar10(nn.Module):
+  def __init__(self, model=None, fixed=False):
+    super(AlexNet_cifar10, self).__init__()
+    self.features = Sequential(
+      Conv2d(3, 48, kernel_size=(5, 5), stride=(1, 1), padding=(2, 2)),
+      nn.BatchNorm2d(48),
+      ReLU(inplace=True),
+      MaxPool2d(kernel_size=3, stride=2, padding=0, dilation=1, ceil_mode=False),
+
+      Conv2d(48, 128, kernel_size=(5, 5), stride=(1, 1), padding=(2, 2)),
+      nn.BatchNorm2d(128),
+      ReLU(inplace=True),
+      MaxPool2d(kernel_size=3, stride=2, padding=0, dilation=1, ceil_mode=False),
+
+      Conv2d(128, 192, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+      nn.BatchNorm2d(192),
+      ReLU(inplace=True),
+
+      Conv2d(192, 192, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+      nn.BatchNorm2d(192),
+      ReLU(inplace=True),
+
+      Conv2d(192, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+      nn.BatchNorm2d(128),
+      ReLU(inplace=True),
+      MaxPool2d(kernel_size=3, stride=2, padding=0, dilation=1, ceil_mode=False),
+    )
+    self.classifier = Sequential(
+      Dropout(p=0.5),
+      Linear(in_features=1152, out_features=512, bias=True),
+      ReLU(inplace=True),
+      Dropout(p=0.5),
+      Linear(in_features=512, out_features=256, bias=True),
+      ReLU(inplace=True),
+      Linear(in_features=256, out_features=10, bias=True),
+    )
+    if model:
+      self.load_state_dict(torch.load(model))
+    if fixed:
+      for p in self.parameters():
+        p.require_grad = False
+  
+  def forward(self, x, out_feature=False):
+    x = self.features(x)
+    x = x.view(x.size(0), -1)
+    feat = self.classifier[:6](x) # upto and include ReLU
+    x = self.classifier[6:](feat)
+    if out_feature:
+      return x, feat
+    else:
+      return x

@@ -16,7 +16,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader 
 import argparse
 from my_utils import LogPrint, set_up_dir, get_CodeID
-from model import AlexNet
+from model import AlexNet, AlexNet_cifar10
 from data_loader import CelebA
 import math
 
@@ -38,7 +38,9 @@ if args.dataset == "celeba":
   args.data_CelebA_train = "../../Dataset/CelebA/Img/train/"
   args.data_CelebA_test  = "../../Dataset/CelebA/Img/test/"
   args.CelebA_attr_file  = "../../Dataset/CelebA/Anno/list_attr_celeba.txt"
-
+if args.dataset == "cifar10":
+  args.data = "../20180918_KD_for_NST/TaskAgnosticDeepCompression2/AgnosticMC/Bin_CIFAR10/data_CIFAR10"
+  
 # set up log dirs
 TimeID, ExpID, rec_img_path, weights_path, log = set_up_dir(args.project_name, args.resume, args.debug)
 args.output_dir = weights_path
@@ -97,6 +99,8 @@ if args.dataset == 'cifar10':
 
     if args.which_net == "embed":
       net = resnet.ResNet34_2neurons().cuda()
+    elif args.which_net == "zskd":
+      net = AlexNet_cifar10().cuda()
     else:
       net = resnet.ResNet34().cuda()
     criterion = torch.nn.CrossEntropyLoss().cuda()
@@ -172,7 +176,7 @@ def train(epoch):
  
         optimizer.zero_grad()
  
-        output = net(images, embed=False)
+        output = net(images, out_feature=False)
 
         loss = criterion(output, labels)
  
